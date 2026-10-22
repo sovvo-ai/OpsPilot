@@ -1,0 +1,359 @@
+openapi: 3.0.3
+info:
+  title: OpsPilot Backend API
+  version: 1.0.0
+  description: |
+    对客户端暴露的业务 API。语义以 `docs/api/ingest-contract.md` v1.1 与 `docs/prd/PRD.md` v1.5 为准。
+
+    **本文件当前只覆盖已冻结的摄取域 + 认证 + 健康检查**。会话/消息/轨迹端点（PRD FR-29–FR-34）
+    尚未做字段级契约，留待 S3 按 PRD 补齐，此处不预先发明字段。
+
+    约定：
+    - 上传 / 重试 / 删除一律返回 **202**；去重命中同样是 202（见 ingest-contract §1.1）。
+    - 错误体固定为 `{"error":{"code","message","request_id"}}`。
+    - `/health/**` 免鉴权。
+
+servers:
+  - url: http://localhost:8081
+    description: 本机开发
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/v1/auth/dev-token:
+    post:
+      summary: 签发开发环境令牌（仅 dev 可用）
+      description: |
+        仅当 `APP_ENV=dev` 且 `ENABLE_DEV_AUTH=true` 时可用，否则 404。
+        `user` 白名单：`demo-user`（缺省）/ `test-user-2`；用于跨用户隔离测试。
+      security: []
+      parameters:
+        - name: user
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [demo-user, test-user-2]
+            default: demo-user
+      responses:
+        '200':
+          description: 令牌
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, token_type, expires_in, sub]
+                properties:
+                  token: { type: string }
+                  token_type: { type: string, enum: [Bearer] }
+                  expires_in: { type: integer, example: 7200 }
+                  sub: { type: string, example: demo-user }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: 非 dev 环境或未开启
+
+  /api/v1/documents:
+    post:
+      summary: 上传文档（异步摄取）
+      description: |
+        前置校验（格式/大小/编码/空内容）失败的请求**不落库**并返回 4xx；
+        校验通过则落库并立即返回 202，响应体含 `poll_url`。
+        同一 owner 重复上传相同内容：返回 202 + `deduplicated=true`，不触发二次摄取。
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: .md / .txt，≤5MB，UTF-8 或 GBK
+                title:
+                  type: string
+                  maxLength: 200
+      responses:
+        '202':
+          description: 已受理（含去重命中）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocumentAccepted' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedFormat'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+
+  /api/v1/documents/{doc_id}:
+    get:
+      summary: 查询文档与摄取状态
+      parameters:
+        - $ref: '#/components/parameters/DocId'
+        - name: include_content
+          in: query
+          required: false
+          schema: { type: boolean, default: false }
+          description: 仅 completed 允许返回正文；deleting 时返回 409。
+      responses:
+        '200':
+          description: 文档状态
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Document' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      summary: 删除文档（可恢复：先进 deleting，再清向量，最后删记录）
+      parameters:
+        - $ref: '#/components/parameters/DocId'
+      responses:
+        '202':
+          description: 已受理删除；重复删除幂等 202
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [doc_id, status]
+                properties:
+                  doc_id: { type: string, format: uuid }
+                  status: { type: string, enum: [deleting] }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/documents/{doc_id}/reingest:
+    post:
+      summary: 手动重试摄取（仅 failed）
+      description: |
+        读取已存正文重跑，不需要重新上传。
+        响应**不含** `attempt`：它只在抢占时递增，此刻尚未执行。
+      parameters:
+        - $ref: '#/components/parameters/DocId'
+      responses:
+        '202':
+          description: 已受理，状态转为 pending
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [doc_id, ingest_status]
+                properties:
+                  doc_id: { type: string, format: uuid }
+                  ingest_status: { type: string, enum: [pending] }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /health/live:
+    get:
+      summary: 进程存活（永远 200）
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthLive' }
+
+  /health/ready:
+    get:
+      summary: 可对外服务（依赖失败 503）
+      security: []
+      responses:
+        '200':
+          description: 就绪
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthReady' }
+        '503':
+          description: 未就绪
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthReady' }
+
+  /health/deps:
+    get:
+      summary: 依赖明细
+      security: []
+      responses:
+        '200':
+          description: 明细
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthDeps' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    DocId:
+      name: doc_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Unauthorized:
+      description: 未认证
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: 不存在或非本人资源（不泄露存在性）
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: 状态冲突（DOC_BUSY / DOC_NOT_RETRYABLE / DOC_DELETING）
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    TooLarge:
+      description: 文件超过 5MB
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    UnsupportedFormat:
+      description: 非 .md/.txt
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unprocessable:
+      description: 编码无法识别 / 内容为空 / 参数非法
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    BadRequest:
+      description: 参数非法
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    IngestStatus:
+      type: string
+      enum: [pending, processing, completed, failed, deleting]
+      description: 五值枚举，与 ingest-consistency.md §2 一致。
+
+    DocumentAccepted:
+      type: object
+      required: [doc_id, ingest_status, deduplicated, poll_url]
+      properties:
+        doc_id: { type: string, format: uuid }
+        ingest_status: { $ref: '#/components/schemas/IngestStatus' }
+        deduplicated: { type: boolean }
+        poll_url: { type: string, example: /api/v1/documents/8f3c... }
+        retry_hint:
+          type: string
+          description: 仅当命中的既有文档为 failed 时出现
+        error_code:
+          type: string
+          description: 仅去重且既有文档 failed 时出现
+
+    Document:
+      type: object
+      required: [doc_id, title, ingest_status, attempt, chunk_count, created_at]
+      properties:
+        doc_id: { type: string, format: uuid }
+        title: { type: string }
+        ingest_status: { $ref: '#/components/schemas/IngestStatus' }
+        attempt:
+          type: integer
+          minimum: 0
+          description: 已执行次数（0 表示尚未执行）
+        chunk_count: { type: integer, minimum: 0 }
+        error_code:
+          type: string
+          nullable: true
+          enum: [DISPATCH_FAILED, TIMEOUT, PARSE_ERROR, EMPTY_CONTENT, EMBEDDING_FAILED, RATE_LIMITED, DB_ERROR, null]
+        error_msg: { type: string, nullable: true }
+        content:
+          type: string
+          description: 仅 include_content=true 且 completed 时返回
+        created_at: { type: string, format: date-time }
+        started_at: { type: string, format: date-time, nullable: true }
+        finished_at: { type: string, format: date-time, nullable: true }
+
+    HealthLive:
+      type: object
+      required: [status, service, version]
+      properties:
+        status: { type: string, enum: [ok] }
+        service: { type: string, example: ops-pilot-backend }
+        version: { type: string }
+        time: { type: string, format: date-time }
+
+    HealthReady:
+      type: object
+      required: [ready, checks]
+      properties:
+        ready: { type: boolean }
+        checks:
+          type: object
+          properties:
+            db:
+              type: object
+              properties: { status: { type: string, enum: [up, down] }, latency_ms: { type: integer } }
+            ai_service:
+              type: object
+              properties: { status: { type: string, enum: [up, down] }, latency_ms: { type: integer } }
+
+    HealthDeps:
+      type: object
+      properties:
+        db:
+          type: object
+          properties: { status: { type: string }, latency_ms: { type: integer } }
+        llm:
+          type: object
+          properties: { status: { type: string }, model: { type: string }, latency_ms: { type: integer } }
+        embedding:
+          type: object
+          properties: { status: { type: string }, model: { type: string }, dim: { type: integer }, latency_ms: { type: integer } }
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum:
+                - UNSUPPORTED_FORMAT
+                - DOC_TOO_LARGE
+                - ENCODING_ERROR
+                - EMPTY_CONTENT
+                - INVALID_QUESTION
+                - DOC_BUSY
+                - DOC_NOT_RETRYABLE
+                - DOC_DELETING
+                - NOT_FOUND
+                - UNAUTHORIZED
+                - MODEL_UNAVAILABLE
+                - DB_UNAVAILABLE
+                - TOOL_NOT_ALLOWED
+                - INTERNAL_AUTH_FAILED
+            message: { type: string }
+            request_id: { type: string }

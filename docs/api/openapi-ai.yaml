@@ -1,0 +1,240 @@
+openapi: 3.0.3
+info:
+  title: OpsPilot AI Service (internal)
+  version: 1.0.0
+  description: |
+    Go → Python 内部契约。语义以 `docs/api/ingest-contract.md` v1.1 为准，本文件只做机器可读转写。
+
+    约定：
+    - 所有 `/internal/**` 端点必须带 `X-Internal-Token`；`/health/**` 豁免。
+    - 业务失败用 200 + 结构化结果返回（`status=failed/stale`），不用 5xx 表达可预期的业务失败。
+    - 不提供 abort 端点（决策 Q2：统一由 Go watchdog 收尾）。
+
+servers:
+  - url: http://ai-service:8000
+    description: compose 内网
+
+security:
+  - internalToken: []
+
+paths:
+  /internal/v1/ingest:
+    post:
+      summary: 执行摄取（解析/切片/Embedding/写不可见切片）
+      description: |
+        Python **不得**写 `ingest_jobs`；只返回结果。切片写入时必须 `visible=false` 且带 `run_token`。
+        `chunk_count=0` 由 Go 侧拒绝发布并置 `failed(EMPTY_CONTENT)`，Python 无需自行判断。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestRequest'
+      responses:
+        '200':
+          description: 结构化结果（成功/失败/过期均为 200）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/InvalidIngestRequest'
+        '503':
+          $ref: '#/components/responses/DbUnavailable'
+
+  /internal/v1/documents/{doc_id}/vectors:
+    delete:
+      summary: 按 doc_id 清理全部切片（含 visible=false 与所有世代）
+      parameters:
+        - name: doc_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 幂等；无切片时 deleted_chunks=0
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [doc_id, deleted_chunks]
+                properties:
+                  doc_id: { type: string, format: uuid }
+                  deleted_chunks: { type: integer, minimum: 0 }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/DbUnavailable'
+
+  /health/live:
+    get:
+      summary: 进程存活
+      security: []
+      responses:
+        '200':
+          description: 永远 200
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthLive' }
+
+  /health/ready:
+    get:
+      summary: 依赖就绪
+      security: []
+      responses:
+        '200':
+          description: 依赖全部可用
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthReady' }
+        '503':
+          description: 任一依赖不可用
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthReady' }
+
+  /health/deps:
+    get:
+      summary: 依赖明细（不含任何密钥）
+      security: []
+      responses:
+        '200':
+          description: 明细
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthDeps' }
+
+components:
+  securitySchemes:
+    internalToken:
+      type: apiKey
+      in: header
+      name: X-Internal-Token
+      description: 与 `AI_SERVICE_TOKEN` 常量时间比较；缺失或错误一律 401，不区分原因。
+
+  parameters:
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      schema: { type: string, maxLength: 128 }
+      description: 与 Go 侧 request_id 一致，用于跨服务串联。
+
+  responses:
+    Unauthorized:
+      description: 内部令牌缺失或错误
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    InvalidIngestRequest:
+      description: 请求缺字段
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    DbUnavailable:
+      description: 数据库不可用
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    IngestRequest:
+      type: object
+      required: [job_id, doc_id, run_token, attempt]
+      properties:
+        job_id: { type: string, format: uuid }
+        doc_id: { type: string, format: uuid }
+        run_token:
+          type: string
+          pattern: '^[0-9a-f]{32}$'
+          description: 32 位小写 hex，由 Go 抢占时生成。
+        attempt:
+          type: integer
+          minimum: 1
+          description: 已执行次数（建行 0，抢占 +1，故本次执行从 1 开始）。
+
+    IngestResult:
+      type: object
+      required: [run_token, status]
+      properties:
+        run_token:
+          type: string
+          pattern: '^[0-9a-f]{32}$'
+          description: 原样回带请求中的 token；Go 用它与 `current_run_token` 做 CAS。
+        status:
+          type: string
+          enum: [ok, failed, stale]
+        chunk_count:
+          type: integer
+          minimum: 0
+          description: status=ok 时必填；为 0 时 Go 拒绝发布。
+        error_code:
+          type: string
+          description: status=failed 时必填
+          enum: [PARSE_ERROR, EMPTY_CONTENT, EMBEDDING_FAILED, RATE_LIMITED, DB_ERROR, TIMEOUT]
+        message:
+          type: string
+          maxLength: 500
+
+    HealthLive:
+      type: object
+      required: [status, service, version]
+      properties:
+        status: { type: string, enum: [ok] }
+        service: { type: string, example: ops-pilot-ai }
+        version: { type: string }
+        time: { type: string, format: date-time }
+
+    HealthReady:
+      type: object
+      required: [ready, checks]
+      properties:
+        ready: { type: boolean }
+        checks:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              status: { type: string, enum: [up, down] }
+              latency_ms: { type: integer }
+
+    HealthDeps:
+      type: object
+      properties:
+        db:
+          type: object
+          properties:
+            status: { type: string, enum: [up, down, not_run] }
+            latency_ms: { type: integer }
+        llm:
+          type: object
+          properties:
+            status: { type: string, enum: [up, down, not_run] }
+            model: { type: string }
+            latency_ms: { type: integer }
+        embedding:
+          type: object
+          properties:
+            status: { type: string, enum: [up, down, not_run] }
+            model: { type: string }
+            dim: { type: integer, example: 1024 }
+            latency_ms: { type: integer }
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code]
+          properties:
+            code:
+              type: string
+              enum: [INTERNAL_AUTH_FAILED, INVALID_INGEST_REQUEST, DB_UNAVAILABLE]
+            message: { type: string }
+            request_id: { type: string }
