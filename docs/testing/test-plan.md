@@ -3,8 +3,8 @@
 | 项 | 值 |
 |---|---|
 | 版本 | v1.0 |
-| 状态 | 已冻结 |
-| 上游 | `docs/prd/PRD.md` v1.5 §11、`docs/testing/test-matrix.md` v1.1、`docs/testing/spike-report.md` §9 |
+| 状态 | 待外部审查（Claude） |
+| 上游 | `docs/prd/PRD.md` v1.6 §11、`docs/testing/test-matrix.md` v1.1、`docs/testing/spike-report.md` §9 |
 | 当前执行状态 | 用例清单已就绪，**尚无业务代码，全部 `NOT RUN`** |
 
 ---
@@ -52,7 +52,7 @@ Go 侧另跑：`cd backend && go test ./... && go vet ./...`。
 | A4 拒答 |  | ● |  | ● | ● |
 | A5 路由与确定性节点 | ● | ● |  |  | ● |
 | A6 预算与抢占 | ● | ● |  |  |  |
-| A7 工具安全 | ● | ● |  | ● |  |
+| A7 工具安全 | ● | ● |  | ● |  | 用例见 `tool-policy.md` §6：<br>`ai-service/tests/unit/test_tool_policy.py`<br>`ai-service/tests/integration/test_tool_injection.py` |
 | A8 轨迹 |  | ● |  | ● |  |
 | A9 引用悬挂 |  | ● |  | ● |  |
 | A10 异常矩阵 | ● | ● | ● | ● |  |
@@ -75,7 +75,7 @@ Go 侧另跑：`cd backend && go test ./... && go vet ./...`。
 2. ruff check ai-service && pytest ai-service/tests/unit
 3. docker compose -f deploy/docker-compose.dev.yml up -d && 等就绪
 4. pytest ai-service/tests/integration
-5. go test ./backend/test/（需要 ai-service 已启动）
+5. cd backend && go test ./test/（需要 ai-service 已启动）
 6. 敏感信息扫描
 ```
 
@@ -104,6 +104,6 @@ grep -rn "subprocess\|os\.system\|eval(" ai-service/app/tools/        # 应为�
 | 数据 | 位置 | 说明 |
 |---|---|---|
 | 种子语料（5 篇） | `scripts/seed_docs/` | 与 `qa_golden.jsonl` 的 Gold 严格对应 |
-| 评测集（35 题） | `evals/datasets/qa_golden.jsonl` | 生成时已脚本校验 Gold 子串存在 |
+| 评测集（35 题） | `ai-service/evals/datasets/qa_golden.jsonl` | 生成时已脚本校验 Gold 子串存在 |
 | 假 LLM 响应 | `ai-service/tests/fixtures/` | S3 建立 |
 | 异常样本 | `test-matrix.md` 各用例内联构造 | 不落盘，避免陈旧 |

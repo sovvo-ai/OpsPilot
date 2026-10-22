@@ -156,6 +156,7 @@ LIMIT $3;
 | `sessions` | `id, owner_id, title, created_at, updated_at` |
 | `messages` | `id, session_id, role, content, citations JSONB, degraded BOOL, run_id, created_at` |
 | `agent_runs` | `id, session_id, message_id, owner_id, route, llm_calls, tool_calls, total_tokens, degraded, terminated_reason, duration_ms, created_at` |
+| `run_steps` | `id, run_id, step_index, node, duration_ms, input_digest, output_summary, degraded, created_at` |
 | `tool_calls` | `id, run_id, step_index, tool_name, args_digest, status, duration_ms, created_at` |
 
 ---

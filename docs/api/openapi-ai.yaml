@@ -109,6 +109,68 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/HealthDeps' }
 
+  /internal/v1/chat:
+    post:
+      summary: 非流式执行一轮问答（Turn）
+      description: |
+        Go 调用 Python 编排的入口。`emit=None` 执行 `run_turn`，返回完整 `TurnResult`。
+        业务失败（如模型不可用）用 200 + 结构化结果表达；5xx 仅用于不可预期的内部错误。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TurnRequest' }
+      responses:
+        '200':
+          description: 完整结果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TurnResult' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/InvalidIngestRequest'
+        '503':
+          $ref: '#/components/responses/DbUnavailable'
+
+  /internal/v1/chat/stream:
+    post:
+      summary: 流式执行一轮问答（SSE）
+      description: |
+        与 `/internal/v1/chat` 共用同一 `run_turn` 实现；通过 `emit` 回调逐条输出事件。
+        事件类型：`meta` / `delta` / `citation` / `done` / `error`。
+        - `citation` 在 final 之后一次性发出，不在流中插入半截引用。
+        - 正常结束必须发 `done`；异常结束发 `error` 后关闭，禁止静默断流。
+        - 客户端断开：停止生成、落 `terminated_reason=client_disconnected`、不再发起新 LLM 调用。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TurnRequest' }
+      responses:
+        '200':
+          description: SSE 流（每条事件 `data:` 为 JSON）
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  data: {"type":"meta","run_id":"…","session_id":"…","request_id":"…"}
+                  data: {"type":"delta","text":"…"}
+                  data: {"type":"citation","citations":[…]}
+                  data: {"type":"done","usage":{"llm_calls":2,"tool_calls":0}}
+                  data: {"type":"error","code":"MODEL_UNAVAILABLE","message":"…"}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/InvalidIngestRequest'
+        '503':
+          $ref: '#/components/responses/DbUnavailable'
+
 components:
   securitySchemes:
     internalToken:
@@ -238,3 +300,134 @@ components:
               enum: [INTERNAL_AUTH_FAILED, INVALID_INGEST_REQUEST, DB_UNAVAILABLE]
             message: { type: string }
             request_id: { type: string }
+
+    TurnRequest:
+      type: object
+      required: [request_id, session_id, turn_index, question]
+      properties:
+        request_id:
+          type: string
+          maxLength: 128
+          description: 与 Go 侧 X-Request-Id 一致，用于跨服务串联。
+        session_id:
+          type: string
+          format: uuid
+        turn_index:
+          type: integer
+          minimum: 0
+          description: 当前轮次，从 0 开始。
+        question:
+          type: string
+          minLength: 1
+          maxLength: 500
+        history:
+          type: array
+          maxItems: 8
+          description: 最近 4 轮 / 8 条，按时间升序。
+          items: { $ref: '#/components/schemas/HistoryMessage' }
+        attach_log:
+          type: string
+          maxLength: 8192
+          description: 可选，随问题一起提交的日志文本（供 analyze_error_log 使用）。
+
+    HistoryMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        content: { type: string }
+
+    TurnResult:
+      type: object
+      required: [run_id, session_id, route, final_text, answer_type, degraded, terminated_reason, usage, duration_ms]
+      properties:
+        run_id: { type: string, format: uuid }
+        session_id: { type: string, format: uuid }
+        route:
+          type: string
+          enum: [kb_qa, troubleshooting, smalltalk, out_of_scope]
+        final_text: { type: string }
+        answer_type:
+          type: string
+          enum: [answered, refusal, clarify, smalltalk, out_of_scope, degraded]
+        citations:
+          type: array
+          items: { $ref: '#/components/schemas/Citation' }
+        degraded: { type: boolean }
+        degrade_reasons:
+          type: array
+          items: { type: string }
+        preempted:
+          type: array
+          items: { type: string }
+        terminated_reason:
+          type: string
+          enum: [completed, budget_exhausted, deadline_exceeded, step_limit, client_disconnected]
+        usage: { $ref: '#/components/schemas/Usage' }
+        duration_ms: { type: integer, minimum: 0 }
+
+    Citation:
+      type: object
+      required: [chunk_id, doc_id, doc_title, snippet, status]
+      properties:
+        chunk_id: { type: string, format: uuid }
+        doc_id: { type: string, format: uuid }
+        doc_title: { type: string }
+        snippet: { type: string, maxLength: 200 }
+        score: { type: number, minimum: 0, maximum: 1 }
+        source_type:
+          type: string
+          enum: [kb, tool, log]
+        tool_call_id:
+          type: string
+          description: source_type=tool/log 时指向具体工具调用。
+        status:
+          type: string
+          enum: [live, deleted, orphaned]
+          description: live=原文可取；deleted=原文已删仅剩快照；orphaned=快照也缺失。
+
+    Usage:
+      type: object
+      required: [llm_calls, tool_calls]
+      properties:
+        llm_calls: { type: integer, minimum: 0 }
+        tool_calls: { type: integer, minimum: 0 }
+        prompt_tokens: { type: integer, minimum: 0 }
+        completion_tokens: { type: integer, minimum: 0 }
+
+    ChatEvent:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [meta, delta, citation, done, error]
+        run_id:
+          type: string
+          format: uuid
+          description: type=meta/done/error 时出现。
+        session_id:
+          type: string
+          format: uuid
+          description: type=meta 时出现。
+        request_id:
+          type: string
+          description: type=meta/error 时出现。
+        text:
+          type: string
+          description: type=delta 时出现。
+        citations:
+          type: array
+          items: { $ref: '#/components/schemas/Citation' }
+          description: type=citation 时出现。
+        usage:
+          $ref: '#/components/schemas/Usage'
+          description: type=done 时出现。
+        code:
+          type: string
+          description: type=error 时出现。
+        message:
+          type: string
+          description: type=error 时出现。

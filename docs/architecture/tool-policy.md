@@ -3,8 +3,8 @@
 | 项 | 值 |
 |---|---|
 | 版本 | v1.0 |
-| 状态 | 已冻结 |
-| 上游 | `docs/prd/PRD.md` v1.5 §8、FR-23~FR-28 |
+| 状态 | 待外部审查（Claude） |
+| 上游 | `docs/prd/PRD.md` v1.6 §8、FR-23~FR-28 |
 | 实现位置 | `ai-service/app/tools/` |
 
 ---
@@ -74,7 +74,7 @@ TOOL_REGISTRY = {
 | P2 | 模型输出的字符串不得作为命令、SQL、路径使用 | 入参全部经 Pydantic 校验 + 枚举白名单 |
 | P3 | 无路径类参数 | V1 三个工具都没有文件/目录参数 |
 | P4 | 无 shell 拼接 | 不存在拼命令的代码路径 |
-| P5 | 工具输出不回流成入参 | 单轮内每个工具最多被调用一次同一参数组合（去重） |
+| P5 | 同参数不得重复调用 | 单轮内同一工具对同一规范化参数组合只执行一次，后续调用复用缓存结果（去重） |
 
 > P1 的 CI 规则要**排除 `docs/`**（文档里存在 `subprocess` 等字样作为政策描述），与 `spike-report.md` §9 M1 的 `sk-` 扫描同一处理方式。
 
@@ -106,7 +106,7 @@ TOOL_REGISTRY = {
 
 ---
 
-## 6. 注入与滥用用例（对应 `test-matrix.md` A7）
+## 6. 注入与滥用用例（对应 PRD A7；用例 S3 落地为 `ai-service/tests/unit/test_tool_policy.py` 与 `ai-service/tests/integration/test_tool_injection.py`）
 
 | 用例 | 输入 | 期望 |
 |---|---|---|

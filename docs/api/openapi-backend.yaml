@@ -3,10 +3,10 @@ info:
   title: OpsPilot Backend API
   version: 1.0.0
   description: |
-    对客户端暴露的业务 API。语义以 `docs/api/ingest-contract.md` v1.1 与 `docs/prd/PRD.md` v1.5 为准。
+    对客户端暴露的业务 API。语义以 `docs/api/ingest-contract.md` v1.1 与 `docs/prd/PRD.md` v1.6 为准。
 
     本文件覆盖：摄取域（FR-01–FR-16）、认证、会话/消息/轨迹（FR-29–FR-34）、健康检查。
-    字段级契约按 PRD v1.5 与 ingest-contract v1.1 转写，不预先发明字段。
+    字段级契约按 PRD v1.6 与 ingest-contract v1.1 转写，不预先发明字段。
 
     约定：
     - 上传 / 重试 / 删除一律返回 **202**；去重命中同样是 202（见 ingest-contract §1.1）。
@@ -499,7 +499,7 @@ components:
         error_code:
           type: string
           nullable: true
-          enum: [DISPATCH_FAILED, TIMEOUT, PARSE_ERROR, EMPTY_CONTENT, EMBEDDING_FAILED, RATE_LIMITED, DB_ERROR, null]
+          enum: [DISPATCH_FAILED, TIMEOUT, PARSE_ERROR, EMPTY_CONTENT, EMBEDDING_FAILED, RATE_LIMITED, DB_ERROR]
         error_msg: { type: string, nullable: true }
         content:
           type: string

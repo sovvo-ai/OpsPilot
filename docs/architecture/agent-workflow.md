@@ -3,8 +3,8 @@
 | 项 | 值 |
 |---|---|
 | 版本 | v1.0 |
-| 状态 | 已冻结 |
-| 上游 | `docs/prd/PRD.md` v1.5 §6/§7、`docs/architecture/ingest-consistency.md` v1.1、`docs/api/ingest-contract.md` v1.1 |
+| 状态 | 待外部审查（Claude） |
+| 上游 | `docs/prd/PRD.md` v1.6 §6/§7、`docs/architecture/ingest-consistency.md` v1.1、`docs/api/ingest-contract.md` v1.1 |
 | 约束 | 只引用冻结文档与 `spike-report.md`，**不新增数值口径** |
 
 > 节点口径：**5 业务节点 + 2 确定性终止节点**（PRD §6.2）。Query Rewrite 是 Retrieval 的内置子步骤，**不是节点**。
@@ -17,8 +17,7 @@
 START
   │
   ▼
-router ──smalltalk──────► smalltalk ──► END
-  │      └─out_of_scope─► out_of_scope ─► END
+router ──smalltalk / out_of_scope──► smalltalk ──► END
   │
   ├──kb_qa / troubleshooting
   ▼
@@ -29,7 +28,8 @@ retrieval ──(chunks 为空 或 最高分 < min_score)──► refuse ──
   └──troubleshooting──► troubleshoot ──► evidence ──► final ──► END
 ```
 
-**边类型**：`router` 后为条件边（`add_conditional_edges`），其余为静态边。`refuse` / `smalltalk` / `out_of_scope` 为终止节点，直接 → END。
+**边类型**：`router` 后为条件边（`add_conditional_edges`），其余为静态边。`refuse` / `smalltalk` 为终止节点，直接 → END。
+`smalltalk` 节点内部按 `route` 分支文案：`route=smalltalk` 走寒暄回复；`route=out_of_scope` 走越界拒答，但 `answer_type` 仍保留 `out_of_scope` 值（PRD §7.1 判定口径不变）。
 
 ---
 
@@ -57,7 +57,7 @@ retrieval ──(chunks 为空 或 最高分 < min_score)──► refuse ──
 | `degraded` | `bool` | 任意节点 | 任一处降级即置 `true`，**只增不减** |
 | `degrade_reasons` | `list[str]` | 任意节点 | 枚举见 §6 |
 | `preempted` | `list[str]` | runner | 被预算抢占跳过的节点名 |
-| `terminated_reason` | `Literal["completed","budget_exhausted","deadline_exceeded","step_limit"]` | runner | 终态原因 |
+| `terminated_reason` | `Literal["completed","budget_exhausted","deadline_exceeded","step_limit","client_disconnected","model_unavailable"]` | runner | 终态原因；后两个为 S2 审查裁补新增，待用户批准 |
 | `usage` | `Usage` | runner | `{llm_calls, tool_calls, prompt_tokens, completion_tokens}` |
 
 ### 2.1 RetrievedChunk
@@ -113,7 +113,7 @@ retrieval ──(chunks 为空 或 最高分 < min_score)──► refuse ──
  "chunks":[{"chunk_id":"…","score":0.83,"content":"…"}]}
 ```
 
-rewrite 触发条件（三重全部满足，否则**不调模型**）：`turn_index ≥ 1` ∧ 命中指代词典（它/那/这个/还有/继续）∧ `history` 中存在 assistant 消息。
+rewrite 触发条件（三重全部满足，否则**不调模型**）：`turn_index ≥ 1` ∧ 命中指代词典（它/那/这个/还有/继续/上面说的）∧ `history` 中存在 assistant 消息。
 失败（超时/空输出）→ `rewritten_query=null` + `degraded=true` + `degrade_reasons+=["rewrite_failed"]`，**不阻断**。
 
 ### 3.3 troubleshoot（LLM + 工具）
@@ -147,13 +147,21 @@ LLM 兜底层（仅当规则判"存疑"且答案含强断言时调用，模型 `
 
 直通条件：`route=kb_qa` ∧ `check_result.supported=true` ∧ `degraded=false` → 直接用 `draft_answer`，**不调模型**。
 
-### 3.6 refuse / smalltalk / out_of_scope（纯代码）
+### 3.6 refuse / smalltalk（纯代码）
 
 ```json
+// route=smalltalk
+{"final_text":"你好！有什么可以帮你的？","answer_type":"smalltalk"}
+
+// route=out_of_scope（在 smalltalk 节点内按 route 分支，但 answer_type 保留 out_of_scope）
+{"final_text":"这个问题超出了我当前知识库的范围。","answer_type":"out_of_scope"}
+
+// route∈{kb_qa,troubleshooting} 但检索无依据
 {"final_text":"未在知识库中找到与该问题相关的依据。检索到的最高分片段是……（score=0.21）","answer_type":"refusal"}
 ```
 
 `refuse` 必须附"最高分片段 + 分数"（PRD §7.4 X6）。
+`smalltalk` 节点按 `route` 分支文案，本身仍是单一终止节点。
 
 ---
 
@@ -164,7 +172,7 @@ def route_after_router(state: State) -> str:
     return {"kb_qa": "retrieval",
             "troubleshooting": "retrieval",
             "smalltalk": "smalltalk",
-            "out_of_scope": "out_of_scope"}[state["route"]]
+            "out_of_scope": "smalltalk"}[state["route"]]
 
 def route_after_retrieval(state: State) -> str:
     if not state["chunks"] or state["chunks"][0]["score"] < MIN_SCORE:
@@ -187,12 +195,12 @@ def route_after_evidence(state: State) -> str:
 
 | 常量 | 值 | 来源 |
 |---|---|---|
-| `MAX_STEPS` | 8 | PRD §6.3 |
-| `MAX_LLM_CALLS` | 6 | PRD §6.3（D14） |
-| `RESERVED_FOR_FINAL` | 1 | PRD §6.3 |
-| `MAX_TOOL_CALLS` | 3 | PRD §6.3 |
-| `WALL_CLOCK_MS` | 60000 | PRD §6.3 |
-| `T_ROUTER` / `T_REWRITE` / `T_RETRIEVAL` / `T_TROUBLESHOOT` / `T_CHECKER` / `T_FINAL` | 8000 / 5000 / 6000 / 15000 / 10000 / 15000 | PRD §6.3（合计 **59s ≤ 60s**） |
+| `MAX_STEPS` | 8 | PRD FR-36 / 计划书 §6.3 |
+| `MAX_LLM_CALLS` | 6 | PRD FR-36 / 计划书 §6.3（D14） |
+| `RESERVED_FOR_FINAL` | 1 | PRD FR-36 / 计划书 §6.3 |
+| `MAX_TOOL_CALLS` | 3 | PRD FR-36 / 计划书 §6.3 |
+| `WALL_CLOCK_MS` | 60000 | PRD FR-36 / 计划书 §6.3 |
+| `T_ROUTER` / `T_REWRITE` / `T_RETRIEVAL` / `T_TROUBLESHOOT` / `T_CHECKER` / `T_FINAL` | 8000 / 5000 / 6000 / 15000 / 10000 / 15000 | PRD FR-36 / 计划书 §6.3（合计 **59s ≤ 60s**） |
 | `LLM_MODEL_ROUTER` / `..._QA` / `..._TROUBLESHOOT` / `..._CHECKER` / `..._FINAL` | `qwen-flash` / `qwen-plus` ×4 | `.env` |
 | `RETRIEVAL_TOP_K` / `RETRIEVAL_MIN_SCORE` / `HNSW_EF_SEARCH` | 5 / 0.35 / 100 | `.env`（`ef_search` 来自 S1 实测） |
 
@@ -207,7 +215,7 @@ def route_after_evidence(state: State) -> str:
 ### 5.3 抢占顺序（额度不足时）
 
 ```
-final(1, 锁定不可抢) > router > troubleshoot 第1次 > troubleshoot 第2次 > checker LLM > rewrite
+final(1, 锁定不可抢) > { router, troubleshoot 第1次 }（同档并列） > troubleshoot 第2次 > checker LLM > rewrite
 ```
 
 实现：`Budget.reserve_final()` 在 CP1 预留 1；`Budget.try_acquire(node)` 对 P0 节点（final）恒成功，其余按剩余额度返回 bool；失败时节点执行"无模型分支"并写 `preempted`。
@@ -220,6 +228,8 @@ final(1, 锁定不可抢) > router > troubleshoot 第1次 > troubleshoot 第2次
 | `BudgetExhausted` | `budget_exhausted` | 若 final 尚未执行 → 用 `draft_answer` 模板兜底；否则原样返回 |
 | `DeadlineExceeded` | `deadline_exceeded` | 同上，并 `degraded=true` |
 | `steps > MAX_STEPS` | `step_limit` | 同上 |
+| 流式客户端断开 | `client_disconnected` | 停止生成，不再发起新 LLM 调用；`degraded=true` |
+| 模型不可用且无法降级 | `model_unavailable` | 如所有候选模型均失败；**来源=S2 审查裁补，待用户批准** |
 
 ---
 
@@ -297,3 +307,4 @@ def run_turn(req: TurnRequest, emit: Callable[[Event], None] | None = None) -> T
 | 1 | LangGraph 1.2.16 的 `StateGraph` 与 `add_conditional_edges` 具体签名 | S6 开工前用最小示例验证（R5） |
 | 2 | Router LLM 的 prompt 与 few-shot | S6 实现时定，评测集 A5 验收 |
 | 3 | `citation` 事件是否需要分页 | 取决于 PRD §11.5 U4 实测体验 |
+| 4 | `terminated_reason` 新增 `client_disconnected`（流式断连）与 `model_unavailable`（模型不可用且无法降级）两个枚举值；**来源=S2 审查裁补，待用户批准** | S2 审查；批准前实现方可暂不处理 |

@@ -3,9 +3,9 @@
 | 项 | 值 |
 |---|---|
 | 版本 | v1.0 |
-| 状态 | 已冻结 |
-| 上游 | `docs/prd/PRD.md` v1.5 §9、`docs/testing/spike-report.md` |
-| 数据 | `evals/datasets/qa_golden.jsonl`（35 条）、`scripts/seed_docs/`（5 篇） |
+| 状态 | 待外部审查（Claude） |
+| 上游 | `docs/prd/PRD.md` v1.6 §9、`docs/testing/spike-report.md` |
+| 数据 | `ai-service/evals/datasets/qa_golden.jsonl`（35 条）、`scripts/seed_docs/`（5 篇） |
 | 执行状态 | **全部 `NOT RUN`** —— 尚无检索实现，本文只定义"怎么算、怎么跑、怎么报" |
 
 ---
@@ -108,9 +108,9 @@
 ```bash
 cd ai-service
 .venv/Scripts/python.exe -m evals.run_eval \
-  --dataset ../evals/datasets/qa_golden.jsonl \
+  --dataset evals/datasets/qa_golden.jsonl \
   --corpus ../scripts/seed_docs \
-  --out ../evals/reports/$(date +%Y%m%dT%H%M).json
+  --out evals/reports/$(date +%Y%m%dT%H%M).json
 ```
 
 执行前置：语料已摄取且全部 `completed`；`HNSW_EF_SEARCH` 按 `.env`；同一进程内串行执行（避免 429，实测并发上限≈30）。
