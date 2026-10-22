@@ -9,6 +9,7 @@ info:
     - 所有 `/internal/**` 端点必须带 `X-Internal-Token`；`/health/**` 豁免。
     - 业务失败用 200 + 结构化结果返回（`status=failed/stale`），不用 5xx 表达可预期的业务失败。
     - 不提供 abort 端点（决策 Q2：统一由 Go watchdog 收尾）。
+    - 状态：已冻结（2026-10-22 S2 审查通过）。仅允许实测结果触发修改。
 
 servers:
   - url: http://ai-service:8000

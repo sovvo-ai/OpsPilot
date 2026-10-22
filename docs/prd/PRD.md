@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 文档版本 | v1.6 |
+| 文档版本 | v1.7 |
 | 状态 | **已冻结（2026-10-22 评审通过）。仅允许 S1 SPIKE 实测结果触发修改；纯措辞/结构性打磨一律拒绝** |
 | 日期 | 2026-10-22 |
 | 上游依据 | `docs/00-planning/00-environment-and-plan.md` v4.4 |
@@ -11,7 +11,7 @@
 
 > **文档一致性声明**：本文所有预算、节点、状态机、错误码、评测指标均继承阶段 0 报告 v4.4，不另立口径。若二者冲突，以阶段 0 报告为准并回改本文。
 >
-> **修订摘要**：v1.1 修三处阻塞（重试 API、错误码落库语义、跨用户测试构造）；v1.2 修 12 项冲突与边界；**v1.3 落地异步摄取一致性 Q1–Q6（Go 独占任务状态 + 两阶段发布 + `deleting` 状态）**；v1.6 仅做 S2 审查后的版本引用回扫（F-F）。详见 §14。
+> **修订摘要**：v1.1 修三处阻塞（重试 API、错误码落库语义、跨用户测试构造）；v1.2 修 12 项冲突与边界；**v1.3 落地异步摄取一致性 Q1–Q6（Go 独占任务状态 + 两阶段发布 + `deleting` 状态）**；v1.6 做 S2 审查后的版本引用回扫（F-F）；**v1.7 关账 S2 审查结论（run_steps 字段清单、terminated_reason 扩展、TurnRequest.attach_log）**。详见 §14。
 
 ---
 
@@ -853,6 +853,16 @@ V1.1 不改变 V1 的任何验收项；V1 通过后再做 V1.1，V1.1 期间不�
 ---
 
 ## 14. 修订记录
+
+### v1.7（2026-10-22 21:25）— S2 审查结论入 PRD（外部审查裁定，用户确认进入 S3）
+
+> 触发依据：S2 文档审查（agent-workflow、tool-policy、ARCHITECTURE、rag-eval-spec、test-plan、openapi-backend.yaml、openapi-ai.yaml）。非措辞调整，而是设计裁补。
+
+| # | 裁定项 | 修订 |
+|---|---|---|
+| S2-A1 | `docs/architecture/data-model.md` §2.5 补 `run_steps` 字段清单 | 字段：`run_id, step_index, node, duration_ms, input_digest, output_summary, degraded, created_at` |
+| S2-A2 | `terminated_reason` 扩展两个枚举值：`client_disconnected`（流式断连）、`model_unavailable`（模型不可用且无法降级） | 写入 `docs/architecture/agent-workflow.md` §5.4 与 §9；对应降级与终态处理同步 |
+| S2-A3 | `TurnRequest.attach_log` 进入 `State.attach_log`，troubleshoot 节点可用 | `docs/architecture/agent-workflow.md` §2 State 表、`openapi-ai.yaml` `TurnRequest` schema、§3.3 troubleshoot 输入清单同步 |
 
 ### v1.6（2026-10-22 20:15）— 由 S1 SPIKE 实测触发的修订（唯一例外条款）
 

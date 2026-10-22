@@ -3,8 +3,8 @@
 | 项 | 值 |
 |---|---|
 | 版本 | v1.0 |
-| 状态 | 待外部审查（Claude） |
-| 上游 | `docs/prd/PRD.md` v1.6 §6/§7、`docs/architecture/ingest-consistency.md` v1.1、`docs/api/ingest-contract.md` v1.1 |
+| 状态 | 已冻结（2026-10-22 S2 审查通过）。仅允许实测结果触发修改 |
+| 上游 | `docs/prd/PRD.md` v1.7 §6/§7、`docs/architecture/ingest-consistency.md` v1.1、`docs/api/ingest-contract.md` v1.1 |
 | 约束 | 只引用冻结文档与 `spike-report.md`，**不新增数值口径** |
 
 > 节点口径：**5 业务节点 + 2 确定性终止节点**（PRD §6.2）。Query Rewrite 是 Retrieval 的内置子步骤，**不是节点**。
@@ -58,7 +58,7 @@ retrieval ──(chunks 为空 或 最高分 < min_score)──► refuse ──
 | `degraded` | `bool` | 任意节点 | 任一处降级即置 `true`，**只增不减** |
 | `degrade_reasons` | `list[str]` | 任意节点 | 枚举见 §6 |
 | `preempted` | `list[str]` | runner | 被预算抢占跳过的节点名 |
-| `terminated_reason` | `Literal["completed","budget_exhausted","deadline_exceeded","step_limit","client_disconnected","model_unavailable"]` | runner | 终态原因；后两个为 S2 审查裁补新增，待用户批准 |
+| `terminated_reason` | `Literal["completed","budget_exhausted","deadline_exceeded","step_limit","client_disconnected","model_unavailable"]` | runner | 终态原因；后两个为 S2 审查裁补新增，已批准（PRD v1.7） |
 | `usage` | `Usage` | runner | `{llm_calls, tool_calls, prompt_tokens, completion_tokens}` |
 
 ### 2.1 RetrievedChunk
@@ -119,7 +119,7 @@ rewrite 触发条件（三重全部满足，否则**不调模型**）：`turn_in
 
 ### 3.3 troubleshoot（LLM + 工具）
 
-**输入**：`question`, `chunks`, `history`
+**输入**：`question`, `chunks`, `history`, `attach_log`
 **输出**：`draft_answer`, `tool_calls`, `usage.llm_calls += 1|2`, `usage.tool_calls += n`
 
 ```json
@@ -230,7 +230,7 @@ final(1, 锁定不可抢) > { router, troubleshoot 第1次 }（同档并列） >
 | `DeadlineExceeded` | `deadline_exceeded` | 同上，并 `degraded=true` |
 | `steps > MAX_STEPS` | `step_limit` | 同上 |
 | 流式客户端断开 | `client_disconnected` | 停止生成，不再发起新 LLM 调用；`degraded=true` |
-| 模型不可用且无法降级 | `model_unavailable` | 如所有候选模型均失败；**来源=S2 审查裁补，待用户批准** |
+| 模型不可用且无法降级 | `model_unavailable` | 如所有候选模型均失败；**来源=S2 审查裁补，已批准（PRD v1.7）** |
 
 ---
 
@@ -308,4 +308,4 @@ def run_turn(req: TurnRequest, emit: Callable[[Event], None] | None = None) -> T
 | 1 | LangGraph 1.2.16 的 `StateGraph` 与 `add_conditional_edges` 具体签名 | S6 开工前用最小示例验证（R5） |
 | 2 | Router LLM 的 prompt 与 few-shot | S6 实现时定，评测集 A5 验收 |
 | 3 | `citation` 事件是否需要分页 | 取决于 PRD §11.5 U4 实测体验 |
-| 4 | `terminated_reason` 新增 `client_disconnected`（流式断连）与 `model_unavailable`（模型不可用且无法降级）两个枚举值；**来源=S2 审查裁补，待用户批准** | S2 审查；批准前实现方可暂不处理 |
+| 4 | `terminated_reason` 新增 `client_disconnected`（流式断连）与 `model_unavailable`（模型不可用且无法降级）两个枚举值；**来源=S2 审查裁补，已批准（PRD v1.7）** | S2 审查通过，进入 S3 实现 |

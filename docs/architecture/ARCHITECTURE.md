@@ -3,7 +3,7 @@
 | 项 | 值 |
 |---|---|
 | 版本 | v1.0 |
-| 状态 | 待外部审查（Claude） |
+| 状态 | 已冻结（2026-10-22 S2 审查通过）。仅允许实测结果触发修改 |
 | 性质 | 薄文档：只给拓扑、两条关键时序、文档索引；细节在各专项文档 |
 
 ---
@@ -92,18 +92,18 @@ Client        Go                Python(LangGraph)               PG            �
 
 | 文档 | 内容 | 状态 |
 |---|---|---|
-| `prd/PRD.md` | 需求、验收、范围 | **已冻结 v1.6** |
+| `prd/PRD.md` | 需求、验收、范围 | **已冻结 v1.7** |
 | `00-planning/00-environment-and-plan.md` | 环境实测、决策、SPIKE 清单 | **已冻结 v4.4** |
 | `architecture/ingest-consistency.md` | 两阶段发布、状态机、watchdog、删除 | **已冻结 v1.1** |
 | `architecture/data-model.md` | DDL、索引、迁移规范 | **已冻结 v1.1** |
-| `architecture/agent-workflow.md` | State/节点/预算/trace/编排入口 | 待审查 v1.0 |
-| `architecture/tool-policy.md` | 三工具契约与禁令 | 待审查 v1.0 |
+| `architecture/agent-workflow.md` | State/节点/预算/trace/编排入口 | **已冻结 v1.0** |
+| `architecture/tool-policy.md` | 三工具契约与禁令 | **已冻结 v1.0** |
 | `api/ingest-contract.md` | 接口语义（人读） | **已冻结 v1.1** |
-| `api/openapi-backend.yaml` / `openapi-ai.yaml` | 机器可读契约 | 待审查 v1.0 |
+| `api/openapi-backend.yaml` / `openapi-ai.yaml` | 机器可读契约 | **已冻结 v1.0** |
 | `testing/spike-report.md` | S1 实测（21 项） | 已完成 |
-| `testing/test-plan.md` | 测试分层与全局约定 | 待审查 v1.0 |
+| `testing/test-plan.md` | 测试分层与全局约定 | **已冻结 v1.0** |
 | `testing/test-matrix.md` | 57 条用例（全 NOT RUN） | **已冻结 v1.1** |
-| `testing/rag-eval-spec.md` | 7 指标 + 35 题 | 待审查 v1.0 |
+| `testing/rag-eval-spec.md` | 7 指标 + 35 题 | **已冻结 v1.0** |
 
 ---
 
