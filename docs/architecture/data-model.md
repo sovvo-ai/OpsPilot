@@ -172,6 +172,22 @@ LIMIT $3;
 >
 > **"哪些字段是为异步一致性加的"这个信息不丢失**：见 §3.2 的字段清单，它保留说明作用，但不再是一份独立迁移。
 
+**迁移书写规范（来源=实测，`spike-report.md` §1.6）**：
+
+| # | 规范 | 实测依据 |
+|---|---|---|
+| N1-a | **`0001` 中所有 `CREATE` 语句必须带 `IF NOT EXISTS`**（扩展、表、索引） | 同一段 DDL 连跑两次：带 `IF NOT EXISTS` 的写法第二次输出 `NOTICE … skipping` 并成功；不带则报 `already exists` |
+| N1-b | **`down` 脚本首段必须先清 `visible=false` 的孤儿切片，再删列** | 回滚删除 `visible` 列后，未发布切片会失去"不可见"标记、被当作正常切片参与检索（见 §3.4 回滚行） |
+| N1-c | 迁移**只执行一次**：任何"补列"式追加迁移在本项目不成立（零部署，终态即初始态） | `ALTER TABLE … ADD COLUMN` 第二次执行报 `ERROR: column … already exists` |
+
+```sql
+-- 0001_init.down.sql 首段（顺序不可颠倒）
+DELETE FROM doc_chunks WHERE visible = FALSE;   -- 先清孤儿：删列后它们会被视为已发布
+DROP TABLE IF EXISTS doc_chunks;
+-- …其余 DROP TABLE IF EXISTS …
+```
+
+
 ### 3.2 为异步一致性引入的字段（说明用，不是独立迁移）
 
 | 表 | 字段 | 作用 |
