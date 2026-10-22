@@ -36,7 +36,7 @@
 | GOPROXY | `https://goproxy.cn,direct` | 已配国内源 | 实测 200 / 1.5s |
 | GOSUMDB | `sum.golang.org` | 默认 | 直连不通，首次 `go mod tidy` 需实测处理 |
 | Python（主） | 3.13.14 | `E:\miniconda`（conda base） | 可用，**禁止**直接 pip 安装污染 base |
-| Python（备） | 3.11.9 | `C:\Users\17380\.workbuddy\binaries\python\versions\3.11.9\python.exe` | 与容器 `python:3.11-slim` 对齐，**用它建 venv** |
+| Python（备） | 3.11.9 | `C:/Users/17380/AppData/Local/Programs/Python/Python311/python.exe`（**S1 实测**：原记录的 managed 路径不存在，已更正为系统 Python 3.11） | 与容器 `python:3.11-slim` 对齐，**用它建 venv** |
 | pip | 26.0.1 | conda base | 未配置镜像源；PyPI 实测 200 但 10.5s，建议 venv 内配国内源 |
 | Node | v22.22.2 / 24.14.1 | managed / `E:\node.js` | V1 不需要；V1.1 前端用原生 JS，也不需要 |
 
@@ -397,6 +397,7 @@ failed ──reingest──► pending        （attempt 在下次 claim 时 +1�
 
 要点：
 - **不可见切片永不参与检索**，发布是唯一生效闸门；旧执行的 token 已被覆盖，CAS 必然 0 行 → 结果丢弃（审计 `stale_result_dropped`）。
+- **429 实测不含 `Retry-After`**（仅 `code=limit_requests`）：退避必须自定义（1s/2s/4s，最多 3 次），不能依赖服务端提示。
 - V1 **不做断点续传**：≤5MB 文档重跑成本可接受。
 
 ### 7.4 删除（可恢复）

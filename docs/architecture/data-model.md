@@ -126,6 +126,14 @@ CREATE INDEX idx_doc_chunks_doc_visible ON doc_chunks (doc_id, visible);
 CREATE INDEX idx_doc_chunks_run_token   ON doc_chunks (run_token);
 ```
 
+**查询期必须显式设置 `hnsw.ef_search`（S1 实测，v1.1 增补）**：
+
+| 项 | 值 | 依据 |
+|---|---|---|
+| 默认值 | **100**（由 `HNSW_EF_SEARCH` 配置） | pgvector 默认 40 在 3000 条 1024 维合成向量上**未能召回与查询向量同向的切片**（cosine=1.0）；`ef_search=200` 正确命中，`REINDEX` 无法修复 |
+| 校验要求 | S4 验收增加"HNSW top-5 与精确全表扫描 top-5 的 Recall@5 ≥ 0.95" | 近似索引召回必须实测，不能假设 |
+| 说明 | 该实测数据分布极端（稀疏单位向量 + 随机稠密向量，距离几乎无区分度），真实 embedding 空间可能更友好；但这正说明**必须用真实语料复测**，不能用合成数据下结论 | — |
+
 **检索 SQL 必须带可见性与状态双重过滤**（缺一即为缺陷）：
 
 ```sql
