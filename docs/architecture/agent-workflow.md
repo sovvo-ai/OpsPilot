@@ -3,7 +3,7 @@
 | 项 | 值 |
 |---|---|
 | 版本 | v1.0 |
-| 状态 | 待外部审查（Claude） |
+| 状态 | 已冻结 |
 | 上游 | `docs/prd/PRD.md` v1.5 §6/§7、`docs/architecture/ingest-consistency.md` v1.1、`docs/api/ingest-contract.md` v1.1 |
 | 约束 | 只引用冻结文档与 `spike-report.md`，**不新增数值口径** |
 

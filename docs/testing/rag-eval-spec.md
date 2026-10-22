@@ -3,7 +3,7 @@
 | 项 | 值 |
 |---|---|
 | 版本 | v1.0 |
-| 状态 | 待外部审查（Claude） |
+| 状态 | 已冻结 |
 | 上游 | `docs/prd/PRD.md` v1.5 §9、`docs/testing/spike-report.md` |
 | 数据 | `evals/datasets/qa_golden.jsonl`（35 条）、`scripts/seed_docs/`（5 篇） |
 | 执行状态 | **全部 `NOT RUN`** —— 尚无检索实现，本文只定义"怎么算、怎么跑、怎么报" |

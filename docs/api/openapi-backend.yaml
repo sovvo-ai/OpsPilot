@@ -5,8 +5,8 @@ info:
   description: |
     对客户端暴露的业务 API。语义以 `docs/api/ingest-contract.md` v1.1 与 `docs/prd/PRD.md` v1.5 为准。
 
-    **本文件当前只覆盖已冻结的摄取域 + 认证 + 健康检查**。会话/消息/轨迹端点（PRD FR-29–FR-34）
-    尚未做字段级契约，留待 S3 按 PRD 补齐，此处不预先发明字段。
+    本文件覆盖：摄取域（FR-01–FR-16）、认证、会话/消息/轨迹（FR-29–FR-34）、健康检查。
+    字段级契约按 PRD v1.5 与 ingest-contract v1.1 转写，不预先发明字段。
 
     约定：
     - 上传 / 重试 / 删除一律返回 **202**；去重命中同样是 202（见 ingest-contract §1.1）。
@@ -159,6 +159,211 @@ paths:
         '409':
           $ref: '#/components/responses/Conflict'
 
+  /api/v1/sessions:
+    post:
+      summary: 创建会话
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string, maxLength: 200 }
+      responses:
+        '201':
+          description: 已创建
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    get:
+      summary: 会话列表（按最近活跃排序，仅本人）
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: before
+          in: query
+          description: 游标分页，上一页最后一条的 updated_at
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: 列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Session' }
+                  next_before: { type: string, format: date-time, nullable: true }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/sessions/{session_id}:
+    get:
+      summary: 会话详情
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: 会话
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      summary: 重命名会话（P1，可选实现）
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string, minLength: 1, maxLength: 200 }
+      responses:
+        '200':
+          description: 已更新
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: 删除会话（级联删除其消息与轨迹）
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '204':
+          description: 已删除
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/sessions/{session_id}/messages:
+    post:
+      summary: 提问（非流式）
+      description: |
+        同步返回完整回答。流式请用 `/messages/stream`，两条路径共用同一编排（agent-workflow §8），
+        落库逻辑一致，按 run_id 可互相补全。
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AskRequest' }
+      responses:
+        '200':
+          description: 回答
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AskResponse' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    get:
+      summary: 消息历史（含引用快照）
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        '200':
+          description: 消息列表（时间升序）
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Message' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/sessions/{session_id}/messages/stream:
+    post:
+      summary: 提问（SSE 流式）
+      description: |
+        `text/event-stream`。事件类型固定五种：`meta` / `delta` / `citation` / `done` / `error`（PRD §8.5 S1–S6）。
+        - 正常结束必须发 `done`（含 usage 摘要）；异常结束发 `error` 后关闭，禁止静默断流。
+        - `citation` 在回答生成完毕后一次性发送，不在流中插入半截引用。
+        - 客户端断开：服务端停止生成、释放预算、落 `terminated_reason=client_disconnected` 的 trace。
+        - 不支持 SSE 的客户端应回退调用非流式 `/messages`。
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AskRequest' }
+      responses:
+        '200':
+          description: SSE 流（每条事件 `data:` 为 JSON）
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  data: {"type":"meta","run_id":"…","session_id":"…"}
+                  data: {"type":"delta","text":"…"}
+                  data: {"type":"citation","citations":[…]}
+                  data: {"type":"done","usage":{"llm_calls":2,"tool_calls":0}}
+                  data: {"type":"error","code":"MODEL_UNAVAILABLE","message":"…"}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /api/v1/runs/{run_id}:
+    get:
+      summary: 执行轨迹（节点时间线 + 用量）
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: 轨迹
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Run' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /health/live:
     get:
       summary: 进程存活（永远 200）
@@ -205,6 +410,11 @@ components:
       bearerFormat: JWT
 
   parameters:
+    SessionId:
+      name: session_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     DocId:
       name: doc_id
       in: path
@@ -239,6 +449,11 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
     Unprocessable:
       description: 编码无法识别 / 内容为空 / 参数非法
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ServiceUnavailable:
+      description: 依赖不可用（MODEL_UNAVAILABLE / DB_UNAVAILABLE）
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -292,6 +507,117 @@ components:
         created_at: { type: string, format: date-time }
         started_at: { type: string, format: date-time, nullable: true }
         finished_at: { type: string, format: date-time, nullable: true }
+
+    Session:
+      type: object
+      required: [id, title, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        message_count: { type: integer, minimum: 0 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    Citation:
+      type: object
+      required: [chunk_id, doc_id, doc_title, snippet, status]
+      properties:
+        chunk_id: { type: string, format: uuid }
+        doc_id: { type: string, format: uuid }
+        doc_title: { type: string }
+        snippet: { type: string, maxLength: 200 }
+        score: { type: number, minimum: 0, maximum: 1 }
+        source_type: { type: string, enum: [kb, tool, log] }
+        tool_call_id:
+          type: string
+          description: source_type=tool/log 时指向具体工具调用
+        status:
+          type: string
+          enum: [live, deleted, orphaned]
+          description: live=原文可取；deleted=原文已删仅剩快照；orphaned=快照也缺失
+
+    Message:
+      type: object
+      required: [id, session_id, role, content, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        session_id: { type: string, format: uuid }
+        role: { type: string, enum: [user, assistant] }
+        content: { type: string }
+        citations:
+          type: array
+          items: { $ref: '#/components/schemas/Citation' }
+        answer_type:
+          type: string
+          enum: [answered, refusal, clarify, smalltalk, out_of_scope, degraded]
+        degraded: { type: boolean }
+        run_id: { type: string, format: uuid, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    AskRequest:
+      type: object
+      required: [question]
+      properties:
+        question: { type: string, minLength: 1, maxLength: 500 }
+        attach_log:
+          type: string
+          maxLength: 8192
+          description: 可选，随问题一起提交的日志文本（供 analyze_error_log 使用）
+
+    AskResponse:
+      type: object
+      required: [message, run_id]
+      properties:
+        message: { $ref: '#/components/schemas/Message' }
+        run_id: { type: string, format: uuid }
+        degraded: { type: boolean }
+        degrade_reasons:
+          type: array
+          items: { type: string }
+
+    RunStep:
+      type: object
+      required: [step_index, node, duration_ms]
+      properties:
+        step_index: { type: integer, minimum: 0 }
+        node:
+          type: string
+          enum: [router, retrieval, troubleshoot, evidence, final, refuse, smalltalk]
+        duration_ms: { type: integer, minimum: 0 }
+        input_digest: { type: string, description: 摘要，不是原文 }
+        output_summary: { type: string }
+        degraded: { type: boolean }
+
+    Run:
+      type: object
+      required: [id, session_id, route, node_path, llm_calls, tool_calls, degraded, terminated_reason, duration_ms, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        session_id: { type: string, format: uuid }
+        request_id: { type: string }
+        route: { type: string, enum: [kb_qa, troubleshooting, smalltalk, out_of_scope] }
+        node_path:
+          type: array
+          items: { type: string }
+        llm_calls: { type: integer, minimum: 0 }
+        tool_calls: { type: integer, minimum: 0 }
+        prompt_tokens: { type: integer, minimum: 0 }
+        completion_tokens: { type: integer, minimum: 0 }
+        degraded: { type: boolean }
+        degrade_reasons:
+          type: array
+          items: { type: string }
+        preempted:
+          type: array
+          items: { type: string }
+        terminated_reason:
+          type: string
+          enum: [completed, budget_exhausted, deadline_exceeded, step_limit, client_disconnected]
+        duration_ms: { type: integer, minimum: 0 }
+        steps:
+          type: array
+          items: { $ref: '#/components/schemas/RunStep' }
+        created_at: { type: string, format: date-time }
 
     HealthLive:
       type: object

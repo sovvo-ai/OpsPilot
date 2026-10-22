@@ -3,7 +3,7 @@
 | 项 | 值 |
 |---|---|
 | 版本 | v1.0 |
-| 状态 | 待外部审查（Claude） |
+| 状态 | 已冻结 |
 | 上游 | `docs/prd/PRD.md` v1.5 §8、FR-23~FR-28 |
 | 实现位置 | `ai-service/app/tools/` |
 

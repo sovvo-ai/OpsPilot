@@ -3,7 +3,7 @@
 | 项 | 值 |
 |---|---|
 | 版本 | v1.0 |
-| 状态 | 待外部审查（Claude） |
+| 状态 | 已冻结 |
 | 上游 | `docs/prd/PRD.md` v1.5 §11、`docs/testing/test-matrix.md` v1.1、`docs/testing/spike-report.md` §9 |
 | 当前执行状态 | 用例清单已就绪，**尚无业务代码，全部 `NOT RUN`** |
 
