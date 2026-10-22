@@ -260,3 +260,14 @@ cd backend && SPIKE_PY_URL=http://127.0.0.1:18000 SPIKE_PY_TOKEN=*** go test ./t
 ```
 
 清理：`docker rm -f opspilot-pg-spike`（S1 结束后执行，避免长期占用 55433）。
+
+---
+
+## 9. 实现备忘（不改冻结文档，供 S3 执行时遵守）
+
+| # | 备忘 | 背景 |
+|---|---|---|
+| M1 | **S3 的 CI 做 `sk-` 泄漏扫描时必须排除 `docs/`** | 冻结文档里存在 `sk-***` 这类**脱敏示例**与"禁止出现 sk- 前缀"的政策描述，字面包含 `sk-`。若扫描全仓库，CI 会永久误报。建议：`grep -r "sk-" --exclude-dir=docs --exclude-dir=.git`，或只扫 `backend/ ai-service/ deploy/ scripts/` |
+| M2 | 集成测试启动外部服务不要用 `(cmd &)` 子 shell | S1 首次跑契约测试时，后台 uvicorn 随 shell 退出被终止，导致 3 条用例假失败。改用独立进程/进程管理器，并在测试前做就绪探活 |
+| M3 | 超时类用例要加"耗时下限"护栏 | 若连接直接失败，超时用例会瞬时通过（假阳性）。S1 已加"<1.5s 判为无效"的断言，S3 沿用 |
+| M4 | HNSW 相关用例必须显式 `SET hnsw.ef_search` | 默认 40 会用错误结果集"通过"断言（见 1.5） |
