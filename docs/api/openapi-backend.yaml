@@ -200,7 +200,6 @@ paths:
                   items:
                     type: array
                     items: { $ref: '#/components/schemas/Session' }
-                  next_before: { type: string, format: date-time, nullable: true }
         '401':
           $ref: '#/components/responses/Unauthorized'
 

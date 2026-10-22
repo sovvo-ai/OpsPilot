@@ -43,6 +43,7 @@ retrieval ──(chunks 为空 或 最高分 < min_score)──► refuse ──
 | `session_id` | `str` | 入口 | 会话 id |
 | `turn_index` | `int` | 入口 | 当前轮次，从 0 开始（首轮 = 0） |
 | `question` | `str` | 入口 | 用户原始问题（≤500 字，超长在 Go 侧已拒绝） |
+| `attach_log` | `str \| None` | 入口 | 可选日志文本，来自 `TurnRequest.attach_log`；troubleshoot 节点可用 |
 | `history` | `list[Message]` | 入口 | 最近 **4 轮 / 8 条**（PRD FR-31），按时间升序 |
 | `route` | `Literal["kb_qa","troubleshooting","smalltalk","out_of_scope"]` | router | 路由结果 |
 | `route_conf` | `float` | router | 0~1；规则命中记 1.0 |
@@ -52,7 +53,7 @@ retrieval ──(chunks 为空 或 最高分 < min_score)──► refuse ──
 | `draft_answer` | `str \| None` | troubleshoot / final | 未校验的答案文本 |
 | `citations` | `list[Citation]` | final / evidence | 见 §2.3 |
 | `check_result` | `CheckResult \| None` | evidence | `{supported, invalid_citations, unsupported_claims, method}` |
-| `final_text` | `str \| None` | final / refuse / smalltalk / out_of_scope | 最终回复 |
+| `final_text` | `str \| None` | final / refuse / smalltalk（含越界分支） | 最终回复 |
 | `answer_type` | `Literal["answered","refusal","clarify","smalltalk","out_of_scope","degraded"]` | 终止节点 | 供前端与企业判分使用 |
 | `degraded` | `bool` | 任意节点 | 任一处降级即置 `true`，**只增不减** |
 | `degrade_reasons` | `list[str]` | 任意节点 | 枚举见 §6 |
