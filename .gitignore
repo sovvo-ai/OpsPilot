@@ -1,0 +1,46 @@
+# ---- 密钥与本地环境（绝不入库）----
+deploy/.env
+.env
+*.env.local
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# ---- Node / 前端 ----
+node_modules/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---- Go ----
+# 可执行产物
+/backend/ai-service
+/backend/api
+*.exe
+*.test
+*.out
+
+# ---- 构建与运行产物 ----
+dist/
+build/
+*.log
+tmp/
+.cache/
+
+# ---- 编辑器与系统 ----
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# ---- 智能体工作区（内部笔记，不属于项目交付物）----
+.workbuddy/
