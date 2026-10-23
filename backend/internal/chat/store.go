@@ -204,8 +204,9 @@ type RunTrace struct {
 	Route            string
 	NodePath         []string
 	Steps            []StepInfo
+	ToolCalls        []ToolCallRecord
 	LLMCalls         int
-	ToolCalls        int
+	ToolCallsCount   int
 	PromptTokens     int
 	CompletionTokens int
 	Degraded         bool
@@ -245,7 +246,7 @@ func InsertAssistantWithRun(
 		     degraded, degrade_reasons, terminated_reason, node_path, preempted, duration_ms
 		 ) VALUES ($1,$2,$3,$4,$5, $6,$7,$8,$9, $10,$11,$12,$13,$14,$15)`,
 		trace.RunID, trace.SessionID, trace.MessageID, trace.OwnerID, trace.Route,
-		trace.LLMCalls, trace.ToolCalls, trace.PromptTokens, trace.CompletionTokens,
+		trace.LLMCalls, trace.ToolCallsCount, trace.PromptTokens, trace.CompletionTokens,
 		trace.Degraded, pq.Array(trace.DegradeReasons), trace.TerminatedReason,
 		pq.Array(trace.NodePath), pq.Array(trace.Preempted), trace.DurationMS,
 	); err != nil {
@@ -260,6 +261,19 @@ func InsertAssistantWithRun(
 			 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
 			trace.RunID, i, s.Node, s.DurationMS,
 			s.InputDigest, s.OutputSummary, s.Degraded,
+		); err != nil {
+			return "", err
+		}
+	}
+
+	// tool_calls：工具审计行（S7）。只落摘要，不落原始入参（NFR-S5）。
+	for i, tc := range trace.ToolCalls {
+		if _, err = tx.Exec(
+			`INSERT INTO tool_calls (run_id, step_index, tool_name,
+			                         args_digest, status, duration_ms)
+			 VALUES ($1,$2,$3,$4,$5,$6)`,
+			trace.RunID, i, tc.ToolName,
+			tc.ArgsDigest, tc.Status, tc.DurationMS,
 		); err != nil {
 			return "", err
 		}
@@ -323,6 +337,11 @@ func GetRun(db *sql.DB, ownerID, runID string) (map[string]any, error) {
 		})
 	}
 
+	toolCallRecords, err := getToolCallRecords(db, runID)
+	if err != nil {
+		return nil, err
+	}
+
 	return map[string]any{
 		"run_id":            runID,
 		"route":             route,
@@ -336,7 +355,37 @@ func GetRun(db *sql.DB, ownerID, runID string) (map[string]any, error) {
 		"duration_ms":       durationMS,
 		"created_at":        createdAt,
 		"steps":             steps,
+		"tool_call_records": toolCallRecords,
 	}, nil
+}
+
+// getToolCallRecords 读该 run 的工具审计行。
+func getToolCallRecords(db *sql.DB, runID string) ([]map[string]any, error) {
+	rows, err := db.Query(
+		`SELECT step_index, tool_name, args_digest, status, duration_ms
+		   FROM tool_calls WHERE run_id = $1 ORDER BY step_index`, runID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []map[string]any
+	for rows.Next() {
+		var (
+			idx, dur         int
+			name, digest, st string
+		)
+		if err := rows.Scan(&idx, &name, &digest, &st, &dur); err != nil {
+			return nil, err
+		}
+		out = append(out, map[string]any{
+			"step_index":  idx,
+			"tool_name":   name,
+			"args_digest": digest,
+			"status":      st,
+			"duration_ms": dur,
+		})
+	}
+	return out, rows.Err()
 }
 
 // TouchSession 刷新会话 updated_at（用于排序活跃度）。

@@ -108,6 +108,13 @@ def final_node(
         and bool(draft)
     )
 
+    # S7：troubleshoot 已基于**工具证据**产出诊断草稿时，final 优先复用，
+    # 不重新凭空生成 —— 否则工具分析结果会被丢弃（实测踩过：模型回问
+    # "请提供日志"，尽管 analyze_error_log 已把 error_type 解析出来了）。
+    troubleshoot_draft = route == "troubleshooting" and bool(draft)
+    if troubleshoot_draft:
+        direct_pass = direct_pass or not degraded
+
     answer = draft
     llm_used = False
 

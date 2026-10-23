@@ -30,6 +30,7 @@ from app.graph.router import router_node
 from app.graph.state import State
 from app.graph.troubleshoot import has_log_signal, troubleshoot_node
 from app.llm import make_llm_call
+from app.tools import ToolExecutor
 
 logger = logging.getLogger("app.graph")
 
@@ -220,7 +221,9 @@ def run_turn(
     runner = Runner(
         cfg,
         llm_call=llm_call or make_llm_call(cfg),
-        tool_executor=tool_executor,
+        # S7：默认注入真工具执行器（封闭白名单 + 次数限制 + 去重 + 审计）。
+        # 测试可传自己的 executor 覆盖。
+        tool_executor=tool_executor or ToolExecutor(),
         retrieve_fn=retrieve_fn,
     )
     app = runner.build()
@@ -304,6 +307,10 @@ def run_turn(
         # --- 轨迹（Go 落 run_steps / agent_runs 用）---
         "node_path": node_path,
         "steps": runner.steps,
+        # S7：工具审计行（Go 落 tool_calls 表）。只含摘要，不含原始入参（NFR-S5）。
+        "tool_call_records": (
+            runner.tool_executor.calls if hasattr(runner.tool_executor, "calls") else []
+        ),
         "retrieval_top_score": (
             (final_state.get("chunks") or [{}])[0].get("score", 0.0)
             if final_state.get("chunks")

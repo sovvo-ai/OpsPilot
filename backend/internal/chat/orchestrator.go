@@ -36,6 +36,8 @@ type TurnResult struct {
 	// --- S6 轨迹（Go 落 run_steps）---
 	NodePath []string   `json:"node_path"`
 	Steps    []StepInfo `json:"steps"`
+	// --- S7 工具审计（Go 落 tool_calls）---
+	ToolCallRecords []ToolCallRecord `json:"tool_call_records"`
 	// --- 检索统计（可选）---
 	RetrievalTopScore float64 `json:"retrieval_top_score"`
 	RetrievedCount    int     `json:"retrieved_count"`
@@ -49,6 +51,16 @@ type StepInfo struct {
 	InputDigest   string `json:"input_digest"`
 	OutputSummary string `json:"output_summary"`
 	Degraded      bool   `json:"degraded"`
+}
+
+// ToolCallRecord 是工具审计行（对齐 tool_calls 表，S7）。
+// 只含摘要：不落原始入参（日志可能含敏感信息，PRD NFR-S5）。
+type ToolCallRecord struct {
+	ToolName      string `json:"tool_name"`
+	ArgsDigest    string `json:"args_digest"`
+	Status        string `json:"status"`
+	DurationMS    int    `json:"duration_ms"`
+	OutputSummary string `json:"output_summary"`
 }
 
 // Orchestrator 负责调用 ai-service 的编排接口。

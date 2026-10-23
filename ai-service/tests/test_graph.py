@@ -95,6 +95,8 @@ def run(q: str, **kw):
         "turn_index": kw.pop("turn_index", 0),
         "history": kw.pop("history", []),
     }
+    if "attach_log" in kw:
+        payload["attach_log"] = kw.pop("attach_log")
     return run_turn(payload, **kw)
 
 
@@ -442,6 +444,79 @@ class TestPromptHardConstraint:
         assert "kept=0" not in prompt
         # 正向口径必须在
         assert "优先依据" in prompt or "基于它作答" in prompt
+
+
+# ---------------------------------------------------------------------------
+# S7：工具接线
+# ---------------------------------------------------------------------------
+
+
+class TestToolWiring:
+    """S7：troubleshoot 接真工具，且工具证据送达生成环节。"""
+
+    def test_tools_actually_invoked_for_log_question(self, monkeypatch):
+        """带日志提问 → analyze_error_log 真的被调用（tool_executor 接上）。"""
+        patch_cfg(monkeypatch)
+        from app.tools import ToolExecutor
+
+        ex = ToolExecutor()
+        llm = CountingLLM()
+        r = run(
+            "服务起不来，日志如下，帮我分析",
+            llm_call=llm,
+            tool_executor=ex,
+            retrieve_fn=lambda o, q, c: CHUNKS,
+            attach_log="2026-10-23 10:00:01 ERROR dial tcp: connection refused",
+        )
+        names = [c["tool_name"] for c in ex.calls]
+        assert "analyze_error_log" in names, f"工具未调用: {names}"
+        assert r["route"] == "troubleshooting"
+
+    def test_tool_evidence_reaches_prompt(self, monkeypatch):
+        """工具证据必须出现在 troubleshoot 的 prompt 里（否则分析被丢弃）。"""
+        patch_cfg(monkeypatch)
+        seen: dict[str, str] = {}
+
+        def llm(role, prompt):
+            if role == "troubleshoot":
+                seen["prompt"] = prompt
+            return "诊断结论[1]"
+
+        run(
+            "服务起不来，日志如下，帮我分析",
+            llm_call=llm,
+            retrieve_fn=lambda o, q, c: CHUNKS,
+            attach_log="2026-10-23 ERROR connection refused",
+        )
+        prompt = seen.get("prompt", "")
+        assert "工具证据" in prompt, "工具证据未注入 prompt"
+        assert "analyze_error_log" in prompt
+
+    def test_tool_records_returned_for_persistence(self, monkeypatch):
+        """工具审计行随返回值传出（Go 落 tool_calls 表）。"""
+        patch_cfg(monkeypatch)
+        r = run(
+            "服务起不来，日志如下",
+            llm_call=CountingLLM(),
+            retrieve_fn=lambda o, q, c: CHUNKS,
+            attach_log="2026-10-23 ERROR connection refused",
+        )
+        records = r.get("tool_call_records") or []
+        assert records, "未返回工具审计行"
+        rec = records[0]
+        # 只含摘要，不含原始入参（NFR-S5）
+        assert "log_text" not in rec
+        assert rec["args_digest"].startswith("sha256:")
+
+    def test_non_whitelisted_tool_does_not_crash_turn(self, monkeypatch):
+        """非白名单工具被拒时不中断本轮（走 invoke_safe 语义）。"""
+        patch_cfg(monkeypatch)
+        from app.tools import ToolExecutor
+
+        ex = ToolExecutor()
+        out = ex.invoke_safe("read_log_tail", {"path": "/var/log/syslog"})
+        assert out["status"] == "rejected"
+        assert out["degraded"] is True
 
 
 # ---------------------------------------------------------------------------
