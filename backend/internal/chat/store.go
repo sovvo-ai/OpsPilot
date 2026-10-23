@@ -196,24 +196,25 @@ func InsertMessage(db *sql.DB, sessionID, role, content, citationsJSON string, d
 
 // RunTrace 是一轮完整轨迹（写 agent_runs + run_steps + tool_calls）。
 type RunTrace struct {
-	RunID            string
-	SessionID        string
-	MessageID        string
-	OwnerID          string
-	RequestID        string
-	Route            string
-	NodePath         []string
-	Steps            []StepInfo
-	ToolCalls        []ToolCallRecord
-	LLMCalls         int
-	ToolCallsCount   int
-	PromptTokens     int
-	CompletionTokens int
-	Degraded         bool
-	DegradeReasons   []string
-	Preempted        []string
-	TerminatedReason string
-	DurationMS       int
+	RunID             string
+	SessionID         string
+	MessageID         string
+	OwnerID           string
+	RequestID         string
+	Route             string
+	NodePath          []string
+	Steps             []StepInfo
+	ToolCalls         []ToolCallRecord
+	RetrievedChunkIDs []string
+	LLMCalls          int
+	ToolCallsCount    int
+	PromptTokens      int
+	CompletionTokens  int
+	Degraded          bool
+	DegradeReasons    []string
+	Preempted         []string
+	TerminatedReason  string
+	DurationMS        int
 }
 
 // InsertAssistantWithRun 写入助手消息并落完整轨迹（agent_runs + run_steps）。
@@ -243,12 +244,14 @@ func InsertAssistantWithRun(
 		`INSERT INTO agent_runs (
 		     id, session_id, message_id, owner_id, route,
 		     llm_calls, tool_calls, prompt_tokens, completion_tokens,
-		     degraded, degrade_reasons, terminated_reason, node_path, preempted, duration_ms
-		 ) VALUES ($1,$2,$3,$4,$5, $6,$7,$8,$9, $10,$11,$12,$13,$14,$15)`,
+		     degraded, degrade_reasons, terminated_reason, node_path, preempted, duration_ms,
+		     retrieved_chunk_ids
+		 ) VALUES ($1,$2,$3,$4,$5, $6,$7,$8,$9, $10,$11,$12,$13,$14,$15, $16)`,
 		trace.RunID, trace.SessionID, trace.MessageID, trace.OwnerID, trace.Route,
 		trace.LLMCalls, trace.ToolCallsCount, trace.PromptTokens, trace.CompletionTokens,
 		trace.Degraded, pq.Array(trace.DegradeReasons), trace.TerminatedReason,
 		pq.Array(trace.NodePath), pq.Array(trace.Preempted), trace.DurationMS,
+		pq.Array(trace.RetrievedChunkIDs),
 	); err != nil {
 		return "", err
 	}
@@ -290,17 +293,20 @@ func GetRun(db *sql.DB, ownerID, runID string) (map[string]any, error) {
 	var (
 		route, terminatedReason             string
 		nodePath, degradeReasons, preempted []string
+		retrievedChunkIDs                   []string
 		llmCalls, toolCalls, durationMS     int
 		degraded                            bool
 		createdAt                           time.Time
 	)
 	err := db.QueryRow(
 		`SELECT route, llm_calls, tool_calls, degraded, degrade_reasons,
-		        terminated_reason, node_path, preempted, duration_ms, created_at
+		        terminated_reason, node_path, preempted, duration_ms, created_at,
+		        retrieved_chunk_ids
 		   FROM agent_runs WHERE id = $1 AND owner_id = $2`,
 		runID, ownerID,
 	).Scan(&route, &llmCalls, &toolCalls, &degraded, pq.Array(&degradeReasons),
-		&terminatedReason, pq.Array(&nodePath), pq.Array(&preempted), &durationMS, &createdAt)
+		&terminatedReason, pq.Array(&nodePath), pq.Array(&preempted), &durationMS, &createdAt,
+		pq.Array(&retrievedChunkIDs))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, &HTTPError{Status: http.StatusNotFound, Code: "NOT_FOUND", Msg: "轨迹不存在"}
 	}
@@ -343,19 +349,20 @@ func GetRun(db *sql.DB, ownerID, runID string) (map[string]any, error) {
 	}
 
 	return map[string]any{
-		"run_id":            runID,
-		"route":             route,
-		"llm_calls":         llmCalls,
-		"tool_calls":        toolCalls,
-		"degraded":          degraded,
-		"degrade_reasons":   degradeReasons,
-		"terminated_reason": terminatedReason,
-		"node_path":         nodePath,
-		"preempted":         preempted,
-		"duration_ms":       durationMS,
-		"created_at":        createdAt,
-		"steps":             steps,
-		"tool_call_records": toolCallRecords,
+		"run_id":              runID,
+		"route":               route,
+		"llm_calls":           llmCalls,
+		"tool_calls":          toolCalls,
+		"degraded":            degraded,
+		"degrade_reasons":     degradeReasons,
+		"terminated_reason":   terminatedReason,
+		"node_path":           nodePath,
+		"preempted":           preempted,
+		"duration_ms":         durationMS,
+		"created_at":          createdAt,
+		"steps":               steps,
+		"tool_call_records":   toolCallRecords,
+		"retrieved_chunk_ids": retrievedChunkIDs,
 	}, nil
 }
 

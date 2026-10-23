@@ -42,6 +42,8 @@ type TurnResult struct {
 	RetrievalTopScore float64 `json:"retrieval_top_score"`
 	RetrievedCount    int     `json:"retrieved_count"`
 	RewrittenQuery    *string `json:"rewritten_query"`
+	// S8：本次检索的完整 Top-K 集合（评测算 Recall@5/MRR@5 必需）
+	RetrievedChunkIDs []string `json:"retrieved_chunk_ids"`
 }
 
 // StepInfo 是单节点轨迹（对齐 run_steps 表）。
