@@ -5,31 +5,6 @@ import (
 	"opspilot/backend/internal/middleware"
 )
 
-// DevToken 返回开发用 JWT（仅 dev 环境）。
-func DevToken(c *gin.Context) {
-	middleware.AbortWithError(c, 501, "NOT_IMPLEMENTED", "该端点已在 OpenAPI 注册，业务逻辑尚未实现")
-}
-
-// UploadDocument 上传文档。
-func UploadDocument(c *gin.Context) {
-	middleware.AbortWithError(c, 501, "NOT_IMPLEMENTED", "该端点已在 OpenAPI 注册，业务逻辑尚未实现")
-}
-
-// GetDocument 查询文档。
-func GetDocument(c *gin.Context) {
-	middleware.AbortWithError(c, 501, "NOT_IMPLEMENTED", "该端点已在 OpenAPI 注册，业务逻辑尚未实现")
-}
-
-// DeleteDocument 删除文档。
-func DeleteDocument(c *gin.Context) {
-	middleware.AbortWithError(c, 501, "NOT_IMPLEMENTED", "该端点已在 OpenAPI 注册，业务逻辑尚未实现")
-}
-
-// ReingestDocument 手动重试摄取。
-func ReingestDocument(c *gin.Context) {
-	middleware.AbortWithError(c, 501, "NOT_IMPLEMENTED", "该端点已在 OpenAPI 注册，业务逻辑尚未实现")
-}
-
 // CreateSession 创建会话。
 func CreateSession(c *gin.Context) {
 	middleware.AbortWithError(c, 501, "NOT_IMPLEMENTED", "该端点已在 OpenAPI 注册，业务逻辑尚未实现")

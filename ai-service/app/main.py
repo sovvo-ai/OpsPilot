@@ -1,8 +1,9 @@
-"""OpsPilot AI Service — S3 骨架。
+"""OpsPilot AI Service。
 
-提供健康检查与内部接口占位，不含业务实现。
+提供健康检查、内部摄取（切片 + Embedding + 不可见切片写入）接口。
 """
 
+import logging
 import os
 
 from fastapi import FastAPI
@@ -11,6 +12,11 @@ from app.middleware import InternalAuthMiddleware, RequestIDMiddleware
 from app.routers import health, internal
 
 APP_VERSION = os.getenv("APP_VERSION", "dev")
+
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "info").upper(),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
 
 app = FastAPI(title="OpsPilot AI Service", version=APP_VERSION)
 

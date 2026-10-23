@@ -13,6 +13,7 @@ import (
 	"opspilot/backend/internal/config"
 	"opspilot/backend/internal/db"
 	"opspilot/backend/internal/handlers"
+	"opspilot/backend/internal/ingest"
 	"opspilot/backend/internal/middleware"
 )
 
@@ -46,6 +47,9 @@ func main() {
 	r.Use(gin.Recovery())
 	r.Use(middleware.RequestID())
 	r.Use(middleware.ErrorHandler())
+	if database != nil {
+		r.Use(middleware.WithDB(database.DB))
+	}
 	r.Use(middleware.JWTAuth(cfg.JWTSecret))
 	r.Use(middleware.InternalAuth(cfg.AIServiceToken))
 
@@ -53,6 +57,12 @@ func main() {
 	health := handlers.NewHealthHandler(database, version, "", cfg.AIServiceURL)
 	auth := handlers.NewAuthHandler(cfg)
 	handlers.RegisterAPIRoutes(r, health, auth)
+
+	var dispatcher *ingest.Dispatcher
+	if database != nil {
+		dispatcher = ingest.NewDispatcher(database.DB, cfg.AIServiceURL, cfg.AIServiceToken)
+		dispatcher.Start()
+	}
 
 	// 404 也走统一结构
 	r.NoRoute(func(c *gin.Context) {
@@ -81,6 +91,9 @@ func main() {
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Printf("关闭失败: %v", err)
+	}
+	if dispatcher != nil {
+		dispatcher.Stop()
 	}
 	if database != nil {
 		_ = database.Close()

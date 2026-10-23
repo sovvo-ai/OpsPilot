@@ -50,17 +50,22 @@ services:
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-v4}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-1024}
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      # 清空宿主编织的、容器内无法使用的代理变量
-      HTTP_PROXY: ""
-      HTTPS_PROXY: ""
-      http_proxy: ""
-      https_proxy: ""
+      # 代理默认放空；若宿主需翻墙可在 deploy/.env 中设置 host.docker.internal:7890
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      http_proxy: ${http_proxy:-}
+      https_proxy: ${https_proxy:-}
+      NO_PROXY: ${NO_PROXY:-postgres,ai-service,backend,localhost,127.0.0.1}
     depends_on:
       postgres:
         condition: service_healthy
+    ports:
+      # 本地验收脚本（脚本在宿主机运行）需要直连内部 ingest 接口；
+      # 生产部署可去掉该映射，仅走 compose 内网。
+      - "${AI_PORT:-8000}:8000"
     networks:
       - opspilot
-    # 仅内网暴露，不映射宿主端口
+    # 默认仅内网暴露；如需宿主直连验收，用上方 AI_PORT 映射
 
   backend:
     build:
@@ -86,11 +91,11 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       ENABLE_DEV_AUTH: ${ENABLE_DEV_AUTH:-true}
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      # 清空宿主编织的、容器内无法使用的代理变量
-      HTTP_PROXY: ""
-      HTTPS_PROXY: ""
-      http_proxy: ""
-      https_proxy: ""
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      http_proxy: ${http_proxy:-}
+      https_proxy: ${https_proxy:-}
+      NO_PROXY: ${NO_PROXY:-postgres,ai-service,backend,localhost,127.0.0.1}
     ports:
       - "${APP_PORT:-8081}:8081"
     depends_on:

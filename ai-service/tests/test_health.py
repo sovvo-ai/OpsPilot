@@ -18,14 +18,30 @@ def test_health_live_200():
     assert r.json()["service"] == "ops-pilot-ai"
 
 
-def test_health_ready_not_ok_503():
-    """数据库不可用时 ready 返回 503。若未配置 DATABASE_URL 则状态为 unknown，
-    若已配置但连不上则状态为 error。"""
+def test_health_ready_matches_dependency_state():
+    """ready 的返回码必须与依赖聚合状态一致（不能自相矛盾）。
+
+    ready 的 healthy = 数据库 ok ∧ 迁移 ok ∧ LLM 已配置 ∧ embedding 已配置。
+    - 全部就绪 → 200
+    - 任一不就绪 → 503
+
+    原用例硬编码 503 只在"无 DB 且无 key"的纯 CI 环境成立；
+    本机/容器配齐依赖时会伪失败。改为条件断言后两种环境都成立，
+    同时仍能抓住"依赖挂了却报 200"这类真实回归。
+    """
     r = client.get("/health/ready")
-    assert r.status_code == 503
     data = r.json()
-    db_status = data["checks"]["database"]["status"]
-    assert db_status in ("unknown", "error")
+    assert "checks" in data and "healthy" in data
+
+    if data["healthy"]:
+        assert r.status_code == 200, "依赖全部就绪时 ready 应为 200"
+        assert data["checks"]["database"]["status"] == "ok"
+    else:
+        assert r.status_code == 503, "存在未就绪依赖时 ready 必须为 503"
+        # 至少有一项非 ok
+        assert any(
+            c.get("status") != "ok" for c in data["checks"].values()
+        ), "healthy=false 时必存在非 ok 的检查项"
 
 
 def test_health_deps_no_auth():
@@ -41,10 +57,11 @@ def test_internal_requires_token():
     assert r.json()["error"]["code"] == "INTERNAL_AUTH_FAILED"
 
 
-def test_internal_with_token_not_implemented():
+def test_internal_with_token_missing_doc_id():
+    """ingest 已实现，空请求应报 400 缺少 doc_id/run_token。"""
     r = client.post("/internal/v1/ingest", json={}, headers=TOKEN)
-    assert r.status_code == 501
-    assert r.json()["error"]["code"] == "NOT_IMPLEMENTED"
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "INVALID_REQUEST"
 
 
 def test_bad_token_401():
