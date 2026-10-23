@@ -1,0 +1,3 @@
+-- 初始化：创建 pgvector 扩展
+-- 幂等：CREATE EXTENSION IF NOT EXISTS
+CREATE EXTENSION IF NOT EXISTS vector;

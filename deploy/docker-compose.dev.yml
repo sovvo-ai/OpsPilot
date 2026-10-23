@@ -1,0 +1,33 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: opspilot-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ops_pilot}
+      POSTGRES_USER: ${POSTGRES_USER:-ops_pilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local-only}
+      # 清空宿主编织的、容器内无法使用的代理变量
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+    volumes:
+      - opspilot_pg_data_dev:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "${POSTGRES_HOST_PORT:-55432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ops_pilot} -d ${POSTGRES_DB:-ops_pilot}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - opspilot-dev
+
+volumes:
+  opspilot_pg_data_dev:
+
+networks:
+  opspilot-dev:
+    driver: bridge

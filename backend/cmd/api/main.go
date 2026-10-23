@@ -1,29 +1,92 @@
 package main
 
 import (
+	"context"
+	"log"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"opspilot/backend/internal/config"
+	"opspilot/backend/internal/db"
+	"opspilot/backend/internal/handlers"
+	"opspilot/backend/internal/middleware"
 )
 
-// S1 SPIKE 骨架：只提供 health 级端点，不含任何业务逻辑。
 func main() {
-	port := os.Getenv("APP_PORT")
-	if port == "" {
-		port = "8081"
+	cfg, err := config.FromEnv()
+	if err != nil {
+		log.Fatalf("配置错误: %v", err)
 	}
+
+	if cfg.AppEnv == "prod" {
+		gin.SetMode(gin.ReleaseMode)
+	} else {
+		gin.SetMode(gin.DebugMode)
+	}
+
+	// 数据库连接
+	var database *db.DB
+	if cfg.DatabaseURL != "" {
+		d, err := db.Open(cfg.DatabaseURL)
+		if err != nil {
+			log.Printf("数据库连接失败: %v", err)
+		} else {
+			database = d
+			if err := database.MigrateUp(); err != nil {
+				log.Printf("迁移失败: %v", err)
+			}
+		}
+	}
+
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(middleware.RequestID())
+	r.Use(middleware.ErrorHandler())
+	r.Use(middleware.JWTAuth(cfg.JWTSecret, cfg.EnableDevAuth))
+	r.Use(middleware.InternalAuth(cfg.AIServiceToken))
 
-	r.GET("/health/live", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"status":  "ok",
-			"service": "ops-pilot-backend",
-			"version": "spike",
-			"time":    time.Now().UTC().Format(time.RFC3339),
-		})
+	version := handlers.ServiceVersion()
+	health := handlers.NewHealthHandler(database, version, "", cfg.AIServiceURL)
+	handlers.RegisterAPIRoutes(r, health)
+
+	// 404 也走统一结构
+	r.NoRoute(func(c *gin.Context) {
+		middleware.AbortWithError(c, http.StatusNotFound, "NOT_FOUND", "路径不存在")
 	})
 
-	_ = r.Run(":" + port)
+	srv := &http.Server{
+		Addr:    ":" + cfg.AppPort,
+		Handler: r,
+	}
+
+	go func() {
+		log.Printf("backend 启动于 :%s", cfg.AppPort)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("服务启动失败: %v", err)
+		}
+	}()
+
+	// 优雅关闭
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("正在关闭服务...")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("关闭失败: %v", err)
+	}
+	if database != nil {
+		_ = database.Close()
+	}
+}
+
+// AbortWithError 暴露给 main 的 no-route 处理。
+func AbortWithError(c *gin.Context, status int, code, message string) {
+	middleware.AbortWithError(c, status, code, message)
 }

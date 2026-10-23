@@ -1,0 +1,109 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: opspilot-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ops_pilot}
+      POSTGRES_USER: ${POSTGRES_USER:-ops_pilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local-only}
+    volumes:
+      - opspilot_pg_data:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "${POSTGRES_HOST_PORT:-55432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ops_pilot} -d ${POSTGRES_DB:-ops_pilot}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - opspilot
+
+  ai-service:
+    build:
+      context: ../ai-service
+      dockerfile: Dockerfile
+      args:
+        HTTP_PROXY: ""
+        HTTPS_PROXY: ""
+        http_proxy: ""
+        https_proxy: ""
+    container_name: opspilot-ai
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-dev}
+      APP_PORT: ${AI_PORT:-8000}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-ops_pilot}
+      POSTGRES_USER: ${POSTGRES_USER:-ops_pilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local-only}
+      AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
+      BAILIAN_BASE_URL: ${BAILIAN_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      LLM_MODEL_ROUTER: ${LLM_MODEL_ROUTER:-qwen-flash}
+      LLM_MODEL_QA: ${LLM_MODEL_QA:-qwen-plus}
+      LLM_MODEL_TROUBLESHOOT: ${LLM_MODEL_TROUBLESHOOT:-qwen-plus}
+      LLM_MODEL_CHECKER: ${LLM_MODEL_CHECKER:-qwen-plus}
+      LLM_MODEL_FINAL: ${LLM_MODEL_FINAL:-qwen-plus}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-v4}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-1024}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # 清空宿主编织的、容器内无法使用的代理变量
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - opspilot
+    # 仅内网暴露，不映射宿主端口
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      args:
+        HTTP_PROXY: ""
+        HTTPS_PROXY: ""
+        http_proxy: ""
+        https_proxy: ""
+    container_name: opspilot-backend
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-dev}
+      APP_PORT: ${APP_PORT:-8081}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-ops_pilot}
+      POSTGRES_USER: ${POSTGRES_USER:-ops_pilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local-only}
+      AI_SERVICE_URL: ${AI_SERVICE_URL:-http://ai-service:8000}
+      AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN}
+      JWT_SECRET: ${JWT_SECRET}
+      ENABLE_DEV_AUTH: ${ENABLE_DEV_AUTH:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # 清空宿主编织的、容器内无法使用的代理变量
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+    ports:
+      - "${APP_PORT:-8081}:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ai-service:
+        condition: service_started
+    networks:
+      - opspilot
+
+volumes:
+  opspilot_pg_data:
+
+networks:
+  opspilot:
+    driver: bridge

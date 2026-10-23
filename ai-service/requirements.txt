@@ -1,0 +1,8 @@
+# AI Service 运行时与测试依赖（S3 骨架阶段）
+# 版本锁定自官方 PyPI，避免使用被篡改的高版本包。
+fastapi==0.115.5
+uvicorn==0.32.1
+pydantic==2.9.2
+httpx==0.27.2
+psycopg[binary]==3.2.3
+pytest==8.3.3
