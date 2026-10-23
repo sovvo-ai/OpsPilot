@@ -120,7 +120,15 @@ def final_node(
             ok = False
 
         if ok and llm_call is not None:
-            prompt = build_prompt(state.get("question", ""), chunks, state.get("history") or [])
+            # B2 修正：不再把 check_result.supported（可能是 None 或假阴性）注入 prompt。
+            # 硬约束只有一条 —— 不得引用不在本次检索集内的片段（由代码层裁剪保证）。
+            invalid = list(check.get("invalid_citations") or [])
+            prompt = build_prompt(
+                state.get("question", ""),
+                chunks,
+                state.get("history") or [],
+                invalid_citations=invalid,
+            )
             try:
                 answer = llm_call("final", prompt)
                 budget.consume_llm()
@@ -144,6 +152,29 @@ def final_node(
             reasons.append("invalid_citation_removed")
 
     answer_type = decide_answer_type(answer or "", citations, has_chunks=bool(chunks))
+
+    # B2 修正：answered 但模型漏标 `[n]` → **兜底归因到最高分片段**。
+    # 理由：answer_type 已按语义判为 answered，此时无引用会让 A3/A3b 与前端"引用可展开"
+    # 缺失。归因对象取本次检索集最高分片段（真实存在、属于本次检索集，满足 A3 硬断言），
+    # 且不伪造不存在的 chunk_id。
+    if answer_type == "answered" and not citations and chunks:
+        top = chunks[0]
+        snippet = top["content"].strip().replace("\n", " ")
+        if len(snippet) > SNIPPET_MAX:
+            snippet = snippet[:SNIPPET_MAX]
+        citations = [
+            {
+                "chunk_id": top["chunk_id"],
+                "doc_id": top["doc_id"],
+                "doc_title": top["doc_title"],
+                "snippet": snippet,
+                "score": top["score"],
+                "source_type": "kb",
+                "status": "live",
+            }
+        ]
+        logger.info("answered 但模型未标注引用，兜底归因到最高分片段 %s", top["chunk_id"][:8])
+
     if answer_type == "refusal":
         citations = []  # FR-18③：拒答禁止伪造引用
 

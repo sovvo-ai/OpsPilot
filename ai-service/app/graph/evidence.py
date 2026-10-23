@@ -43,7 +43,18 @@ def evidence_node(
     llm_call=None,
     record_step=None,
 ) -> dict:
-    """evidence 节点实现。"""
+    """evidence 节点实现。
+
+    **B2 修正（关键）**：`kb_qa` 主路径本就没有 `draft_answer`（草稿由 `final` 生成），
+    此时 evidence 只能拿到空 draft。早期实现在这种"无米下锅"的情况下输出
+    `supported=False`，这个**假阴性**信号流进 final 的 prompt 后，模型会据此拒答 ——
+    即"检索到好证据却拒答"的演示事故级缺陷。
+
+    现改为：
+      - `draft_answer` 为空 → `method="skip"`, `supported=None`（**不是 False**），
+        并跳过 checker（无草稿无从校验）。
+      - 引用裁剪照常执行（硬约束），结果通过 `citations` 传给 final。
+    """
     t0 = time.monotonic()
     chunks = state.get("chunks") or []
     draft = state.get("draft_answer") or ""
@@ -58,13 +69,40 @@ def evidence_node(
         else:
             invalid.append(cit.get("chunk_id", ""))
 
-    supported = bool(kept) and not invalid
-    method = "rule"
     degraded = bool(state.get("degraded", False))
     reasons: list[str] = list(state.get("degrade_reasons") or [])
 
+    # --- B2：无草稿 → skip 语义，不产生假阴性 ---
+    if not draft:
+        step = {
+            "node": "evidence",
+            "duration_ms": int((time.monotonic() - t0) * 1000),
+            "input_digest": _digest(""),
+            "output_summary": (
+                f"method=skip, supported=None, kept={len(kept)}, invalid={len(invalid)}"
+            ),
+            "degraded": degraded,
+        }
+        if record_step:
+            record_step(step)
+        return {
+            "citations": kept,
+            "check_result": {
+                "supported": None,  # 关键：None ≠ False
+                "invalid_citations": invalid,
+                "unsupported_claims": [],
+                "method": "skip",
+            },
+            "degraded": degraded,
+            "degrade_reasons": reasons,
+        }
+
+    # --- 有草稿：规则层判定 ---
+    supported = bool(kept) and not invalid
+    method = "rule"
+
     # LLM 兜底层：规则判"存疑"（有引用但不完整/有强断言）时才调用
-    suspect = (not supported and bool(draft)) or has_strong_claim(draft)
+    suspect = (not supported) or has_strong_claim(draft)
     if suspect and llm_call is not None:
         if budget.try_acquire("checker", PRIORITY_CHECKER):
             try:
@@ -90,7 +128,7 @@ def evidence_node(
     step = {
         "node": "evidence",
         "duration_ms": int((time.monotonic() - t0) * 1000),
-        "input_digest": hashlib.sha256((draft or "").encode("utf-8")).hexdigest()[:16],
+        "input_digest": _digest(draft),
         "output_summary": (
             f"supported={supported}, kept={len(kept)}, invalid={len(invalid)}, method={method}"
         ),
@@ -105,3 +143,7 @@ def evidence_node(
         "degraded": degraded,
         "degrade_reasons": reasons,
     }
+
+
+def _digest(text: str) -> str:
+    return "sha256:" + hashlib.sha256((text or "").encode("utf-8")).hexdigest()[:16]

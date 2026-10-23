@@ -330,6 +330,12 @@ components:
           type: string
           maxLength: 8192
           description: 可选，随问题一起提交的日志文本（供 analyze_error_log 使用）。
+        owner_id:
+          type: string
+          description: |
+            资源归属者（内部扩展字段，B3 登记）。
+            FR-16 要求检索按 owner_id 过滤，该值由 Go 从 JWT 上下文派生并随载荷传入；
+            对外必填项仍以 request_id/session_id/turn_index/question 为准。
 
     HistoryMessage:
       type: object

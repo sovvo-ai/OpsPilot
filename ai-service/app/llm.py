@@ -37,7 +37,9 @@ def make_llm_call(cfg: dict):
         payload = {
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.0 if role in ("router", "checker", "rewrite") else 0.2,
+            # B2 修正：final 也降到 0，减少"漏标 `[n]`"的随机抖动
+            # （answer_type 已按语义判定，不再依赖引用；但引用稳定性仍影响 A3b）
+            "temperature": 0.0 if role in ("router", "checker", "rewrite", "final") else 0.2,
             "max_tokens": 256 if role in ("router", "checker", "rewrite") else cfg.get("answer_max_tokens", 1024),
             "stream": False,
         }

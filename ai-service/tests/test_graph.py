@@ -185,6 +185,10 @@ class TestRouterRulesZeroLLM:
             ("你好", "smalltalk"),
             ("谢谢", "smalltalk"),
             ("你是谁", "smalltalk"),
+            # B3 小项：复合闲聊必须走 smalltalk（前缀匹配），不得漏到 kb_qa
+            ("你好，你是谁？", "smalltalk"),
+            ("你好，你能做什么？", "smalltalk"),
+            ("在吗？我想问下 Nginx", "smalltalk"),
             ("帮我翻译这段话", "out_of_scope"),
             ("讲个笑话", "out_of_scope"),
             ("Pod CrashLoopBackOff 怎么排查？", "kb_qa"),
@@ -310,6 +314,134 @@ class TestRefusalNoTroubleshootSteps:
         text = r["final_text"]
         for marker in ("kubectl", "第一步", "排查顺序", "```"):
             assert marker not in text, f"拒答文案出现了排障步骤特征：{marker}"
+
+
+class TestEvidenceSkipSemantics:
+    """B2 回归：kb_qa 主路径无 draft → evidence 必须输出 skip/None，**不得输出 False**。
+
+    根因：早期 evidence 在无 draft 时输出 `supported=False`，这个假阴性流进 final 的
+    prompt 后模型会据此拒答 —— 即"检索到好证据却拒答"（演示事故级）。
+    """
+
+    def test_no_draft_yields_skip_not_false(self):
+        from app.graph.evidence import evidence_node
+
+        out = evidence_node({"chunks": CHUNKS, "draft_answer": "", "citations": []}, budget=Budget())
+        check = out["check_result"]
+        assert check["method"] == "skip", f"无 draft 应为 skip，实际 {check['method']}"
+        assert check["supported"] is None, "无 draft 时 supported 必须是 None，不能是 False"
+
+    def test_no_draft_does_not_call_checker(self):
+        calls = []
+
+        def llm(role, prompt):
+            calls.append(role)
+            return "supported"
+
+        from app.graph.evidence import evidence_node
+
+        evidence_node({"chunks": CHUNKS, "draft_answer": "", "citations": []},
+                      budget=Budget(), llm_call=llm)
+        assert calls == [], "无 draft 时不应调 checker"
+
+    def test_with_draft_keeps_rule_semantics(self):
+        from app.graph.evidence import evidence_node
+
+        cit = [dict(CHUNKS[0], snippet="x", source_type="kb", status="live")]
+        cit[0]["chunk_id"] = CHUNKS[0]["chunk_id"]
+        out = evidence_node({"chunks": CHUNKS, "draft_answer": "看这里[1]", "citations": cit},
+                            budget=Budget())
+        assert out["check_result"]["method"] in ("rule", "llm")
+        assert out["check_result"]["supported"] is True
+
+
+class TestAnsweredStability:
+    """B2 回归：有检索片段时，kb_qa 主路径必须稳定 answered（5 篇语料各一问）。
+
+    且 answered 必须**必然带引用** —— 模型漏标 `[n]` 时由 final 兜底归因到最高分片段。
+    """
+
+    # 覆盖 5 篇语料
+    CASES = [
+        ("Pod CrashLoopBackOff 应该怎么排查？", "11111111-1111-1111-1111-111111111111"),
+        ("Nginx 502 是什么原因？", "22222222-2222-2222-2222-222222222222"),
+        ("MySQL 慢查询怎么定位？", "33333333-3333-3333-3333-333333333333"),
+        ("Linux 网络不通怎么排查？", "44444444-4444-4444-4444-444444444444"),
+        ("日志级别应该怎么用？", "55555555-5555-5555-5555-555555555555"),
+    ]
+
+    @pytest.mark.parametrize("question,chunk_id", CASES)
+    def test_answered_when_chunks_present(self, monkeypatch, question, chunk_id):
+        patch_cfg(monkeypatch)
+        # 模型给出带引用的正常回答
+        llm = CountingLLM(answers={"final": "根据文档，应按顺序排查[1]。"})
+        chunks = [
+            {
+                "chunk_id": chunk_id,
+                "doc_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                "doc_title": "doc.md",
+                "score": 0.72,
+                "content": "相关排查内容。",
+                "heading_path": "1",
+            }
+        ]
+        r = run(question, llm_call=llm, retrieve_fn=lambda o, q, c: chunks)
+        assert r["answer_type"] == "answered", (
+            f"{question!r} 有片段却判 {r['answer_type']}（citations={len(r['citations'])}）"
+        )
+        assert r["citations"], "answered 必须带引用"
+
+    def test_anaphora_question_with_good_chunks_is_answered(self, monkeypatch):
+        """B2 的真实形态：含指代 + 有片段 + rewrite 成功 → 必须 answered。"""
+        patch_cfg(monkeypatch)
+        llm = CountingLLM(answers={"final": "探针应这样配置：livenessProbe 检查存活[1]。"})
+        r = run(
+            "那它怎么配？",
+            llm_call=llm,
+            retrieve_fn=lambda o, q, c: CHUNKS,
+            turn_index=1,
+            history=[{"role": "assistant", "content": "先看 describe"}],
+        )
+        assert r["rewritten_query"] is not None
+        assert r["answer_type"] == "answered", f"实际 {r['answer_type']}"
+        assert r["citations"]
+
+    @pytest.mark.parametrize(
+        "answer",
+        [
+            "模型这次忘了标注引用，但内容是有依据的。",   # 漏标 [n]
+            "答案里引用了不存在的编号[9]。",              # 编造编号
+        ],
+    )
+    def test_answered_always_has_citations(self, monkeypatch, answer):
+        """B2 兜底归因：answered 时引用必须非空（否则前端无法展开、A3 失败）。"""
+        patch_cfg(monkeypatch)
+        llm = CountingLLM(answers={"final": answer})
+        r = run("Pod 怎么排查？", llm_call=llm, retrieve_fn=lambda o, q, c: CHUNKS)
+        assert r["answer_type"] == "answered"
+        assert r["citations"], f"answered 却无引用：{answer!r}"
+        # 归因对象必须是本次检索集内的切片（A3 硬断言）
+        assert r["citations"][0]["chunk_id"] in {c["chunk_id"] for c in CHUNKS}
+
+
+class TestPromptHardConstraint:
+    """final 的 prompt 只应消费 invalid_citations 硬约束，不消费 supported 布尔。"""
+
+    def test_prompt_does_not_leak_supported_false(self, monkeypatch):
+        patch_cfg(monkeypatch)
+        seen = {}
+
+        def llm(role, prompt):
+            if role == "final":
+                seen["prompt"] = prompt
+            return "答案[1]"
+
+        run("Pod 怎么排查？", llm_call=llm, retrieve_fn=lambda o, q, c: CHUNKS)
+        prompt = seen.get("prompt", "")
+        assert "supported=False" not in prompt
+        assert "kept=0" not in prompt
+        # 正向口径必须在
+        assert "优先依据" in prompt or "基于它作答" in prompt
 
 
 # ---------------------------------------------------------------------------

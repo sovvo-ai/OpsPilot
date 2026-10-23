@@ -135,22 +135,46 @@ class TestDecideAnswerType:
     def test_no_chunks_is_refusal(self):
         assert decide_answer_type("任何文本", [], has_chunks=False) == "refusal"
 
-    def test_no_citations_is_refusal(self):
-        """有检索片段但答案无有效引用 → 拒答。
+    def test_no_citations_but_substantive_is_answered(self):
+        """B2 修正后的语义：引用不再决定 answer_type。
 
-        真实案例：Redis 问题检索到 0.47 的噪声片段，模型说"依据不足"，
-        早期实现标 answered + 0 引用，A4 判分失败且误导用户。
+        早期"无引用即拒答"会让 answer_type 与"模型是否漏标 [n]"强耦合，
+        造成同一问题时而 answered 时而 refusal（演示事故级不稳定）。
+        现按**语义**判定：有片段 + 文本非"依据不足" → answered。
+        （引用由 final 的兜底归因保证非空。）
         """
-        assert decide_answer_type("这是回答。", [], has_chunks=True) == "refusal"
+        assert decide_answer_type("这是回答。", [], has_chunks=True) == "answered"
 
     def test_insufficient_evidence_marker_is_refusal(self):
+        """整体拒答：开头即说依据不足，且全文无引用标注。"""
         answer = "依据提供的知识库片段，未包含关于 Redis 集群脑裂的描述。因此，无法依据知识库片段回答该问题。依据不足。"
         assert decide_answer_type(answer, [], has_chunks=True) == "refusal"
 
     def test_marker_with_citations_still_refusal(self):
-        """即使模型挂了引用，只要明说依据不足仍判拒答。"""
-        answer = "片段未包含该内容[1]，依据不足。"
+        """拒答式否定：特征在**开头** → 仍判拒答。
+
+        （FR-18③ 禁止拒答挂引用；此处先判拒答，再由 final 清空引用。）
+        """
+        answer = "依据不足，无法回答该问题[1]。"
         assert decide_answer_type(answer, [{"chunk_id": "x"}], has_chunks=True) == "refusal"
+
+    def test_leading_insufficient_is_refusal(self):
+        answer = "知识库未提供该数值[1]。依据不足，无法回答。"
+        assert decide_answer_type(answer, [{"chunk_id": "x"}], has_chunks=True) == "refusal"
+
+    def test_trailing_insufficient_note_is_not_refusal(self):
+        """B2 真实案例：主体作答 + 末尾补充"其他未覆盖" → **必须 answered**。
+
+        实测原文：答案主体正确且有 [1][2][3] 引用，仅末尾补一句
+        "其他超时…未在知识库找到依据"，早期因其含关键词而整体误判为拒答。
+        """
+        answer = (
+            "`Connection timed out` 表示报文被丢弃，常见于防火墙丢包[3]；"
+            "`504 Gateway Timeout` 由 proxy_read_timeout 控制[1]；"
+            "`Lock wait timeout exceeded` 是 MySQL 行锁等待超时[2]。\n\n"
+            "其他超时（如连接建立超时、DNS 解析超时）未在知识库中明确参数，**未在知识库找到依据**。"
+        )
+        assert decide_answer_type(answer, [{"chunk_id": "x"}], has_chunks=True) == "answered"
 
     def test_answered_when_citations_present(self):
         assert decide_answer_type("CrashLoopBackOff 先看 describe[1]。", [{"chunk_id": "x"}], has_chunks=True) == "answered"

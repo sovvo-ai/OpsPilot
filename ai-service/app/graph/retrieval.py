@@ -25,6 +25,12 @@ logger = logging.getLogger("app.graph.retrieval")
 ANAPHORA_WORDS = ("它", "那", "这个", "那个", "还有", "继续", "上面说的", "刚才", "前面说的", "此")
 
 
+def _starts_with_anaphora(text: str) -> bool:
+    """改写结果是否仍以指代词开头（判定消解失败）。"""
+    t = text.strip()
+    return any(t.startswith(w) for w in ("它", "他", "她", "那", "这个", "那个", "该", "此"))
+
+
 def should_rewrite(state: dict) -> bool:
     """FR-17 三重条件判定。"""
     turn_index = int(state.get("turn_index", 0))
@@ -65,13 +71,30 @@ def retrieval_node(
     if should_rewrite(state) and llm_call is not None:
         if budget.try_acquire("rewrite", PRIORITY_REWRITE):
             try:
+                history_text = "\n".join(
+                    f"{'用户' if m.get('role') == 'user' else '助手'}：{m.get('content', '')}"
+                    for m in (state.get("history") or [])
+                )
                 out = llm_call(
                     "rewrite",
-                    "把用户这句依赖上下文的追问改写成独立完整的问题，只输出改写后的问题。\n"
-                    f"最近对话：{state.get('history')}\n追问：{question}",
+                    "把用户的追问改写成**独立完整、可单独检索**的问题。\n"
+                    "要求：\n"
+                    "1. 必须把指代词（它/那/这个/该…）替换为【最近对话】中的**具体名词**；\n"
+                    "2. 不要保留任何指代词，也不要输出解释、前缀或引号；\n"
+                    "3. 只输出改写后的一句话。\n\n"
+                    f"【最近对话】\n{history_text}\n\n"
+                    f"【追问】{question}\n\n"
+                    "【改写后的问题】",
                 )
                 if out and out.strip():
-                    rewritten = out.strip()
+                    candidate = out.strip().strip('"“”\'')
+                    # 消解失败守卫：改写结果若仍以指代词开头，说明未真正消解，
+                    # 此时退回原句（配合 final prompt 的 anaphora_note 兜底），
+                    # 避免把"它怎么配"这类无指代对象的句子送进检索。
+                    if candidate and not _starts_with_anaphora(candidate):
+                        rewritten = candidate
+                    else:
+                        logger.info("rewrite 未消解指代（%r），退回原句", candidate[:30])
                 budget.consume_llm()
             except Exception as exc:  # noqa: BLE001
                 logger.warning("rewrite 失败，用原句继续: %s", exc)

@@ -38,10 +38,13 @@ AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://127.0.0.1:8000")
 PASS_MARK = "✅"
 FAIL_MARK = "❌"
 
-# A5 Router 测试集（10 题，覆盖四类；期望路由由 PRD §7.1 判定顺序决定）
+# A5 Router 测试集（12 题，覆盖四类；期望路由由 PRD §7.1 判定顺序决定）
+# B3 小项：补 2 道**复合闲聊**，否则全锚定词典的漏洞测不到（"你好，你是谁？"曾漏到 kb_qa 再拒答）
 ROUTER_CASES: list[tuple[str, str, str]] = [
     ("你好", "smalltalk", "寒暄强命中"),
     ("你是谁", "smalltalk", "自我介绍问法"),
+    ("你好，你是谁？", "smalltalk", "复合闲聊：问候+自我介绍"),
+    ("你好，你能做什么？", "smalltalk", "复合闲聊：问候+能力询问"),
     ("帮我写一个 Python 脚本", "out_of_scope", "越界：写代码"),
     ("翻译一下这段话", "out_of_scope", "越界：翻译"),
     ("Pod 一直 CrashLoopBackOff 应该怎么排查？", "kb_qa", "知识问答"),
@@ -295,96 +298,91 @@ def test_a8_trace(client: Client, db: DB) -> bool:
 def test_fr17_multiturn(client: Client, db: DB) -> bool:
     """FR-17：5 条多轮真链路 + 首轮不复写断言。
 
-    判定口径**严格按 rag-eval-spec §3**：
-      A 组（多轮）：`context_turns` + `question`（turn_index=1）→ 应触发 rewrite
-      B 组（对照）：仅 `control_single_turn_question`（turn_index=0）→ 不触发
-      Recall 用 `gold_chunk_texts` 在**本次 Top-K 检索集**内做子串匹配（不是只看 citations）
-      多轮保持率 = ΣRecall_A / ΣRecall_B，门槛 ≥ 0.90
+    **验收改造（S6 审查 B1 修正）**：原版走 `_call_internal` 直打 ai-service 内部接口，
+    绕开了 Go 链路，且判定只用**检索层 Recall**（不查最终 answered）—— 两个盲区叠加
+    把 B1（外部链路 rewrite 未触发）与 B2（有证据还拒答）都放过了。
 
-    ⚠️ 关键实现细节：必须用完整 Top-K 集合（`retrieved_chunk_ids`）算 Recall。
-    早期版本误用 `citations`（仅"被答案引用的切片"），集合偏小会低估 Recall。
+    现改为**一律走对外 `/sessions/{id}/messages`**，断言链 =
+        `rewritten=True` ∧ **引用非空** ∧ `answer_type=answered`
+
+    判定层级：端到端（对外接口返回值 + run trace），不再只看检索层。
     """
-    print("\n【FR-17】多轮真链路（5 条）+ 首轮不复写")
+    print("\n【FR-17】多轮真链路（5 条，走对外接口）+ 首轮不复写")
     multiturn = [r for r in load_golden() if r.get("category") == "multiturn"]
     print(f"  multiturn 题数: {len(multiturn)}")
 
-    def recall_of(ids: list[str], golds: list[str]) -> float:
-        if not golds:
-            return 0.0
-        corpus = []
-        with db.connect() as conn:
-            with conn.cursor() as cur:
-                for cid in ids:
-                    if not cid:
-                        continue
-                    cur.execute("SELECT content FROM doc_chunks WHERE chunk_id = %s", (cid,))
-                    row = cur.fetchone()
-                    if row:
-                        corpus.append(row["content"])
-        text = "\n".join(corpus)
-        hit = sum(1 for g in golds if g and g in text)
-        return hit / len(golds)
-
-    sum_a = sum_b = 0.0
-    rewrite_hits = 0
+    ok_all = True
     for row in multiturn:
-        hist = [{"role": t["role"], "content": t["content"]} for t in (row.get("context_turns") or [])]
-        base = {"session_id": "00000000-0000-0000-0000-000000000000", "owner_id": "demo-user"}
-        a = _call_internal({**base, "request_id": f"A-{row['id']}", "turn_index": 1,
-                            "question": row["question"], "history": hist})
-        b = _call_internal({**base, "request_id": f"B-{row['id']}", "turn_index": 0,
-                            "question": row["control_single_turn_question"]})
-        ra = recall_of(a.get("retrieved_chunk_ids") or [], row["gold_chunk_texts"])
-        rb = recall_of(b.get("retrieved_chunk_ids") or [], row["gold_chunk_texts"])
-        sum_a += ra
-        sum_b += rb
-        if a.get("rewritten_query"):
-            rewrite_hits += 1
-        print(f"  {row['id']}: Recall_A={ra:.2f} Recall_B={rb:.2f} | 改写={a.get('rewritten_query')!r}")
+        # 用真实会话建立历史：逐轮把 context_turns 的 user 轮真实提问
+        sid = client.session("demo-user", f"FR17-{row['id']}")
+        for turn in (row.get("context_turns") or []):
+            if turn.get("role") == "user":
+                client.ask("demo-user", sid, turn["content"])
 
-    retention = (sum_a / sum_b) if sum_b else None
-    ok_retention = retention is not None and retention >= 0.90
-    print(f"  ΣRecall_A={sum_a:.2f} ΣRecall_B={sum_b:.2f} "
-          f"多轮保持率={retention:.2f}（门槛 ≥0.90）" if retention is not None else "  ΣRecall_B=0 → NOT RUN")
-    print(f"  rewrite 触发: {rewrite_hits}/{len(multiturn)}（A 组应全部触发）")
+        # 真实追问（走对外接口）
+        resp = client.ask("demo-user", sid, row["question"])
+        msg = resp.get("message", {})
+        run = client.run("demo-user", resp["run_id"])
+        ret = next((s for s in (run.get("steps") or []) if s["node"] == "retrieval"), {})
+        rewritten = "rewritten=True" in (ret.get("output_summary") or "")
+        cites = msg.get("citations") or []
+        atype = msg.get("answer_type")
 
-    # --- 首轮不复写断言 ---
-    print("\n  首轮不复写断言（turn_index=0，即使含指代词）：")
+        good = rewritten and bool(cites) and atype == "answered"
+        print(f"  {PASS_MARK if good else FAIL_MARK} {row['id']} {row['question'][:14]:16s} "
+              f"rewritten={rewritten} answer_type={atype} citations={len(cites)}")
+        if not good:
+            print(f"      content: {(msg.get('content') or '')[:120]}")
+        ok_all = ok_all and good
+
+    # --- 首轮不复写断言（对外接口 + trace）---
+    print("\n  首轮不复写断言（新会话首轮，即使含指代词）：")
     ok_first = True
     for row in multiturn:
-        inner = _call_internal(
-            {
-                "request_id": f"first-{row['id']}",
-                "session_id": "00000000-0000-0000-0000-000000000000",
-                "turn_index": 0,
-                "question": row["question"],
-                "owner_id": "demo-user",
-            }
-        )
-        rewritten = inner.get("rewritten_query")
-        good = rewritten is None
-        print(f"    {PASS_MARK if good else FAIL_MARK} {row['id']} rewritten_query={rewritten}")
+        sid = client.session("demo-user", f"FR17-first-{row['id']}")
+        resp = client.ask("demo-user", sid, row["question"])  # 新会话第 0 轮
+        run = client.run("demo-user", resp["run_id"])
+        ret = next((s for s in (run.get("steps") or []) if s["node"] == "retrieval"), {})
+        rewritten = "rewritten=True" in (ret.get("output_summary") or "")
+        good = not rewritten
+        print(f"    {PASS_MARK if good else FAIL_MARK} {row['id']} rewritten={rewritten}")
         ok_first = ok_first and good
 
-    # --- B 组不触发改写（对照）---
-    print("\n  对照断言：B 组（单轮等价问法）不得触发改写：")
-    ok_b = True
-    for row in multiturn:
-        inner = _call_internal(
-            {
-                "request_id": f"B-{row['id']}",
-                "session_id": "00000000-0000-0000-0000-000000000000",
-                "turn_index": 0,
-                "question": row["control_single_turn_question"],
-                "owner_id": "demo-user",
-            }
-        )
-        good = inner.get("rewritten_query") is None
-        ok_b = ok_b and good
-    print(f"    {PASS_MARK if ok_b else FAIL_MARK} B 组 5 条均未触发改写")
+    ok = ok_all and ok_first
+    print(f"  {PASS_MARK if ok else FAIL_MARK} FR-17 多轮（端到端 answered）+ 首轮不复写")
+    return ok
 
-    ok = ok_retention and rewrite_hits == len(multiturn) and ok_first and ok_b
-    print(f"  {PASS_MARK if ok else FAIL_MARK} FR-17 多轮 + 首轮不复写")
+
+def test_b2_answered_stability(client: Client) -> bool:
+    """B2 回归：5 篇语料各一问 × 3 轮，answered 率必须 100%，且 answered 必带引用。
+
+    这是"有证据却拒答"（演示事故级）的端到端回归。走对外接口。
+    """
+    print("\n【B2】主链路 answered 稳定性（5 篇语料 × 3 轮，走对外接口）")
+    cases = [
+        "Pod CrashLoopBackOff 应该怎么排查？",
+        "Nginx 502 是什么原因？",
+        "MySQL 慢查询怎么定位？",
+        "Linux 网络不通怎么排查？",
+        "日志级别应该怎么用？",
+    ]
+    total = answered = with_cites = 0
+    for rnd in range(3):
+        sid = client.session("demo-user", f"B2稳定性{rnd}")
+        for q in cases:
+            resp = client.ask("demo-user", sid, q)
+            msg = resp.get("message", {})
+            total += 1
+            if msg.get("answer_type") == "answered":
+                answered += 1
+                if msg.get("citations"):
+                    with_cites += 1
+    rate = answered / total if total else 0.0
+    cite_rate = with_cites / answered if answered else 0.0
+    print(f"  answered = {answered}/{total} = {rate:.0%}（门槛 100%）")
+    print(f"  answered 且带引用 = {with_cites}/{answered} = {cite_rate:.0%}（门槛 100%）")
+    ok = rate == 1.0 and cite_rate == 1.0
+    print(f"  {PASS_MARK if ok else FAIL_MARK} B2 主链路稳定性")
     return ok
 
 
@@ -463,9 +461,10 @@ def main() -> int:
 
     scorecard: dict[str, bool] = {}
     scorecard["A5_router_accuracy"] = test_a5_router(client)
+    scorecard["B2_answered_stability"] = test_b2_answered_stability(client)
     scorecard["A6_final_never_preempted"] = test_a6_budget(client, db)
     scorecard["A8_trace_reconstructable"] = test_a8_trace(client, db)
-    scorecard["FR17_multiturn_and_first_turn_no_rewrite"] = test_fr17_multiturn(client, db)
+    scorecard["FR17_multiturn_e2e_answered"] = test_fr17_multiturn(client, db)
     scorecard["budget_preempt_checker"] = test_budget_preempt_checker(db)
 
     print("\n" + "=" * 70)

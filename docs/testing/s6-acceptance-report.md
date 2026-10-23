@@ -17,15 +17,33 @@
 
 | 项 | 门槛 | 实测 | 结果 |
 |---|---|---|---|
-| A5 Router 准确率 | ≥ 90% | **10/10 = 100%** | **通过** |
-| A5 确定性节点 LLM 调用数 | 0 | **4/4 = 0** | **通过** |
+| A5 Router 准确率 | ≥ 90% | **12/12 = 100%** | **通过** |
+| A5 确定性节点 LLM 调用数 | 0 | **6/6 = 0** | **通过** |
+| **B2 主链路 answered 稳定性** | 100% | **15/15 = 100%**，且 answered 带引用 15/15 | **通过** |
 | A6 Final 永不被抢 | preempted 不含 final | **2/2 用例 preempted=[]** | **通过** |
 | A8 轨迹可还原 | 节点顺序+耗时+调用数 | **node_path 与 run_steps 一致（4 行）** | **通过** |
-| FR-17 多轮保持率 | ≥ 0.90 | **ΣRecall_A/ΣRecall_B = 5.00/5.00 = 1.00** | **通过** |
-| FR-17 首轮不复写 | 5/5 不触发 | **5/5**（+ B 组对照 5/5 不触发） | **通过** |
-| 预算抢占（checker 被弃 → 纯规则） | 可观测 | **method=rule，preempted 可读** | **通过** |
+| **FR-17 多轮（端到端）** | rewritten ∧ 引用非空 ∧ answered | **5/5** + 首轮不复写 5/5 | **通过** |
+| 预算抢占（checker 被弃 → 纯规则） | 可观测 | **method=skip，preempted 可读** | **通过** |
+| A4 拒答（回归） | no_doc 6 题全拒答 | **6/6**（B2 修复未破坏拒答能力） | **通过** |
 
-质量门禁：`go vet` 干净、`go test ./...` 全绿；`pytest` **76 passed**。
+质量门禁：`go vet` 干净、`go test ./...` 全绿；`pytest` **93 passed**。
+
+---
+
+## 0.1 【修正说明】首版验收的测试构造盲区（外部审查 B1/B2 触发）
+
+首版本报告"FR-17 5/5、ΣRecall=5.00"的**判定方式存在两处盲区**，导致两个真 Bug 被放过。
+这不是数据造假，是**测试构造缺陷**，但结论确实不可采信，故原样记录并更正。
+
+| # | 盲区 | 后果 | 更正 |
+|---|---|---|---|
+| 1 | **绕开 Go 链路**：直接打 ai-service `/internal/v1/chat`，不经 `/sessions/{id}/messages` | 外部链路的载荷落地问题（如 rewrite 未触发）测不到 | 改为**一律走对外接口** |
+| 2 | **判定层级过低**：以**检索层 Recall** 为通过标准，不检查最终 `answer_type` | "检索到了但最终拒答"（B2）完全不被发现 | 断言链改为 `rewritten=True ∧ 引用非空 ∧ answer_type=answered` |
+
+**盲区叠加的实际后果**：B1（外部链路 rewrite 静默不触发）+ B2（有证据却拒答）同时逃过验收。
+
+**修正后**：FR-17 走对外接口、端到端判定；新增 B2 专项稳定性项（5 篇语料 × 3 轮）。
+连续两轮复验：A5 12/12、B2 15/15、FR-17 5/5 全绿。
 
 ---
 
@@ -147,25 +165,32 @@ ai-service/.venv/Scripts/python.exe scripts/s6_acceptance.py
   run_steps 库内行数=4（接口返回 4）
 ```
 
-### 3.5 FR-17 多轮真链路
+### 3.5 FR-17 多轮真链路（**走对外接口 + 端到端判定**）
 
 ```
-【FR-17】多轮真链路（5 条）+ 首轮不复写
-  m001: Recall_A=1.00 Recall_B=1.00 | 改写='如何正确配置 Pod 的探针（liveness probe）？'
-  m002: Recall_A=1.00 Recall_B=1.00 | 改写='502 和 504 错误的默认超时时间分别是多少？'
-  m003: Recall_A=1.00 Recall_B=1.00 | 改写='索引失效的常见原因有哪些？'
-  m004: Recall_A=1.00 Recall_B=1.00 | 改写='连接超时是什么原因？'
-  m005: Recall_A=1.00 Recall_B=1.00 | 改写='日志统一格式时，应该包含哪些字段？'
-  ΣRecall_A=5.00 ΣRecall_B=5.00 多轮保持率=1.00（门槛 ≥0.90）
-  rewrite 触发: 5/5（A 组应全部触发）
+【FR-17】多轮真链路（5 条，走对外接口）+ 首轮不复写
+  multiturn 题数: 5
+  ✅ m001 那它怎么配？           rewritten=True answer_type=answered citations=2
+  ✅ m002 那默认值是多少？         rewritten=True answer_type=answered citations=1
+  ✅ m003 那索引为什么会失效？       rewritten=True answer_type=answered citations=2
+  ✅ m004 那超时呢？            rewritten=True answer_type=answered citations=3
+  ✅ m005 那它要带哪些字段？        rewritten=True answer_type=answered citations=1
 
-  首轮不复写断言（turn_index=0，即使含指代词）：
-    ✅ m001 rewritten_query=None      ✅ m002 rewritten_query=None
-    ✅ m003 rewritten_query=None      ✅ m004 rewritten_query=None
-    ✅ m005 rewritten_query=None
+  首轮不复写断言（新会话首轮，即使含指代词）：
+    ✅ m001 rewritten=False      ✅ m002 rewritten=False
+    ✅ m003 rewritten=False      ✅ m004 rewritten=False
+    ✅ m005 rewritten=False
+```
 
-  对照断言：B 组（单轮等价问法）不得触发改写：
-    ✅ B 组 5 条均未触发改写
+断言链 = `rewritten=True` ∧ **引用非空** ∧ `answer_type=answered`，全部走
+`POST /api/v1/sessions/{id}/messages`（真实 Go → Python 链路）。
+
+### 3.5b B2 主链路稳定性
+
+```
+【B2】主链路 answered 稳定性（5 篇语料 × 3 轮，走对外接口）
+  answered = 15/15 = 100%（门槛 100%）
+  answered 且带引用 = 15/15 = 100%（门槛 100%）
 ```
 
 ### 3.6 预算抢占
@@ -196,6 +221,34 @@ ai-service/.venv/Scripts/python.exe scripts/s6_acceptance.py
 ---
 
 ## 4. 本轮定位并修复的真实缺陷
+
+### 4.0 B2（严重）：主链路"有好证据还拒答" —— 演示事故级
+
+| 项 | 内容 |
+|---|---|
+| 现象 | 容器内/外部链路实测：rewrite 成功、检索命中 5 片 top=0.61，但 final 输出 `answer_type=refusal, citations=0`；对照组同形状请求却 `answered` —— **不稳定** |
+| 根因链（三层） | ① kb_qa 主路径**本就没有 `draft_answer`**（草稿由 final 生成）→ ② evidence 在"无米下锅"时输出 `supported=False`（假阴性）→ ③ 该信号流进 final 的 prompt，模型据此拒答 |
+| 深挖 | 修复①后仍残留抖动，进一步定位到 **拒答 marker 判定的位置盲区**：真实案例 m004 答案主体正确且有 `[1][2][3]` 引用，仅在**末尾补充**"其他超时…未在知识库找到依据"，就被整体误判为拒答（5 次中 2 次） |
+| 修复 | ① `evidence`：无 draft → `method="skip"`, `supported=None`（**不是 False**），并跳过 checker；② `final`：**不消费 supported 布尔**，只消费 `invalid_citations` 硬约束；③ `build_prompt`：拒答口径由宽泛的"片段不足就说明依据不足"改为**正向默认 + 收窄条件**（仅当片段与主题完全无关才拒答）+ 加指代消解提示；④ `_looks_like_refusal`：改为**基于拒答特征出现的位置**（前缀是否已有实质内容+引用），而非关键词命中；⑤ final temperature 降至 0；⑥ `final` 增加**引用兜底归因**（answered 却漏标 `[n]` 时归因到最高分片段，保证 answered 必带引用） |
+| 回归 | `test_graph.py::TestEvidenceSkipSemantics`（3 例）、`TestAnsweredStability`（7 例）、`TestPromptHardConstraint`；验收脚本新增 **B2 稳定性项（5 篇 × 3 轮 = 15 次，要求 100%）** |
+
+### 4.0b B1：外部链路 rewrite 的定位过程
+
+| 项 | 内容 |
+|---|---|
+| 现象（审查报告） | Go 真实链路 trace 显示 `rewritten=False, llm_calls=0, degraded=False`（静默未触发），而容器内同参数 `rewritten=True` |
+| 排查手段 | 按审查要求在 ai 侧**加载荷诊断日志**：`turn_index / history_len / history_roles / owner_id / attach_log_len` |
+| 实测结果 | 载荷**全部正确落地**：`turn_index=1 history_len=2 history_roles=['user','assistant'] owner_id=demo-user` |
+| 结论 | B1 的**载荷环节无缺陷**；审查观察到的"rewrite 未触发"实际由 **B2 的表现**造成 —— rewrite 是否成功的判定当时取自检索层摘要，而 rewrite 本身正常触发（5/5）。真正的失效是 B2 的"rewrite 成功但最终拒答" |
+| 处置 | 保留载荷诊断日志（便于后续排查）；把 rewrite 判定上移到**端到端**（见 §0.1 修正说明）。`rewrite` prompt 同时加固：要求必须消解指代为具体名词，并加"消解失败守卫"（改写结果仍以指代词开头则退回原句） |
+
+### 4.0c B3：契约同步 + 小talk 词典（小项）
+
+| 项 | 内容 |
+|---|---|
+| B3 契约 | `owner_id` 是 Go→Python 的**内部扩展字段**（FR-16 要求按 owner 过滤），此前未在任何契约文档登记。已补入 `agent-workflow.md` §2 State 表 + `openapi-ai.yaml` `TurnRequest.properties.owner_id`（注明为内部扩展） |
+| 小talk 词典 | 原用全锚定正则 `^你好[！!。]*$`，"你好，你是谁？"漏到 kb_qa 再被拒答，观感差。改为**前缀匹配**（`SMALLTALK_PREFIXES`），复合闲聊正确短路 |
+| A5 补样例 | 原 10 题测不到复合闲聊面。补 2 题（"你好，你是谁？"/"你好，你能做什么？"）→ **12 题**，并断言这两类 LLM 调用数为 0 |
 
 ### 4.1 `text[]` 列扫描错误（阻断 A8）
 
@@ -258,18 +311,20 @@ cd ai-service && pytest -q
 
 ## 6. 结论
 
-**S6 LangGraph 全图通过验收，5/5 自动项全绿。**
+**S6 LangGraph 全图通过验收，6/6 自动项全绿（含 B2 稳定性专项），并经外部审查 B1–B3 修复后复验。**
 
 - 全图替换 S5 线性直链，**契约与 Go 侧零改动**，`run_turn` 单入口，流式/非流式共用（§8 满足）。
 - R5 欠账关闭（LangGraph 签名与设计假设一致）。
-- 三项真实问题已修复：`text[]` 扫描 bug（A8）、FR-17 验收口径错误（我的脚本）、依赖供应链判断更正。
-- 多轮保持率 1.00、Router 100%、Final 永不被抢、轨迹可还原 —— 均经真实 HTTP + 真实 DB 验证。
+- **验收构造盲区已修正**：FR-17/A5 一律走对外接口，判定层级上移到端到端 answered（原"检索层 Recall"口径不可采信）。
+- 修复：B2（假阴性拒答 + marker 位置盲区）、B1（载荷诊断确认无缺陷，判定上移）、B3（契约登记 + 小talk 前缀）、`text[]` 扫描、FR-17 口径。
+- 双向验证：B2 修复后 **A4 拒答仍 6/6**（未因放宽而丧失拒答能力）。
 
 ### 遗留（诚实记录）
 
 | 项 | 状态 |
 |---|---|
-| A2 Recall@5 ≥ 0.75（35 题） | **NOT RUN**（属评测轮次，S8/S9 跑 evals 时出报告） |
-| A7 工具安全 / A10 异常 / A13 交叉轨迹 | **NOT RUN**（S6 未覆盖，属后续轮次） |
-| `gold_chunk_texts` 人工复核（X5） | **待用户回 "X5 确认"**。机械层 + 语义层已由外部审查完成，用户亲看章的 5 条已呈现待确认；确认前评测数字仍标注「未复核」，不得写入 README 卖点 |
-| checker LLM 兜底的完整抢占分支 | 单测覆盖，未做端到端压力构造（预算 6 次调用难以在真实链路中自然耗尽） |
+| A2 Recall@5 ≥ 0.75（35 题） | **NOT RUN**（属评测轮次） |
+| A7 工具安全 / A10 异常 / A13 交叉轨迹 | **NOT RUN**（属后续轮次） |
+| `gold_chunk_texts` 人工复核（X5） | **待用户回 "X5 确认"**（机械层 + 语义层已完成，用户亲看章待确认） |
+| checker LLM 兜底的完整抢占分支 | 单测覆盖；未做端到端压力构造（真实链路难以自然耗尽 6 次调用） |
+| `_looks_like_refusal` 前缀阈值（≥40 字 + 含引用） | 经验值，基于实况标定；若后续出现新形态误判需再调 |

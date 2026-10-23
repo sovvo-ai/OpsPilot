@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -13,6 +14,7 @@ from app.ingest import IngestError, ingest_document
 from app.middleware import make_error_body
 
 router = APIRouter()
+logger = logging.getLogger("app.routers.internal")
 
 
 @router.post("/internal/v1/ingest")
@@ -109,6 +111,21 @@ async def chat(request: Request) -> JSONResponse:
     # request_id 以中间件透传的为准，保证跨服务串联
     if rid:
         body["request_id"] = rid
+
+    # 【B1 排查用】载荷落地诊断：确认 Go→Python 的 history / turn_index 真实到达情况
+    history = body.get("history") or []
+    logger.info(
+        "chat 载荷: request_id=%s session_id=%s turn_index=%s question=%r "
+        "history_len=%d history_roles=%s owner_id=%s attach_log_len=%d",
+        body.get("request_id"),
+        body.get("session_id"),
+        body.get("turn_index"),
+        (body.get("question") or "")[:40],
+        len(history),
+        [m.get("role") for m in history],
+        body.get("owner_id"),
+        len(body.get("attach_log") or ""),
+    )
 
     try:
         result = run_turn(body)

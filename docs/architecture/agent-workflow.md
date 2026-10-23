@@ -44,6 +44,7 @@ retrieval ──(chunks 为空 或 最高分 < min_score)──► refuse ──
 | `turn_index` | `int` | 入口 | 当前轮次，从 0 开始（首轮 = 0） |
 | `question` | `str` | 入口 | 用户原始问题（≤500 字，超长在 Go 侧已拒绝） |
 | `attach_log` | `str \| None` | 入口 | 可选日志文本，来自 `TurnRequest.attach_log`；troubleshoot 节点可用 |
+| `owner_id` | `str` | 入口 | **内部扩展字段**（`TurnRequest.owner_id`）。FR-16 要求检索按 `owner_id` 过滤，而该字段不在对外 `TurnRequest` 的必填项内 —— 它是 Go→Python 的内部载荷。S6 审查（B3）要求登记在此，避免"契约外字段"隐式存在 |
 | `history` | `list[Message]` | 入口 | 最近 **4 轮 / 8 条**（PRD FR-31），按时间升序 |
 | `route` | `Literal["kb_qa","troubleshooting","smalltalk","out_of_scope"]` | router | 路由结果 |
 | `route_conf` | `float` | router | 0~1；规则命中记 1.0 |

@@ -21,21 +21,16 @@ from app.graph.budget import PRIORITY_HIGH, Budget
 
 logger = logging.getLogger("app.graph.router")
 
-SMALLTALK_PATTERNS = (
-    r"^你好[啊呀！!。]*$",
-    r"^您好[啊呀！!。]*$",
-    r"^hi\b",
-    r"^hello\b",
-    r"^在吗[？?]*$",
-    r"^谢谢[你您]?[！!。]*$",
-    r"^感谢",
-    r"^你是谁",
-    r"^你是什么",
-    r"^你能做什么",
-    r"^你会什么",
-    r"^介绍一下你",
+# 寒暄：**前缀匹配**（B3 小项修正）。
+# 早期用全锚定 `^你好[！!。]*$`，导致"你好，你是谁？"这类复合闲聊漏到 kb_qa 再被拒答，
+# 观感差。问候类改为前缀命中即短路（PRD §7.1 第 2 档本就是"强命中"语义）。
+SMALLTALK_PREFIXES = (
+    "你好", "您好", "hi", "hello", "哈喽", "在吗", "在么",
+    "谢谢", "感谢", "多谢", "谢了",
+    "你是谁", "你是什么", "你能做什么", "你会什么", "介绍一下你", "你叫什么",
 )
 
+# 越界：保持正则（需要匹配"帮我写"这类中间出现的模式）
 OUT_OF_SCOPE_PATTERNS = (
     r"写(一段|个|下)?(代码|程序|脚本|函数|算法)",
     r"帮我写",
@@ -62,14 +57,20 @@ def _matches(patterns: tuple[str, ...], text: str) -> bool:
     return any(re.search(p, low, re.IGNORECASE) for p in patterns)
 
 
+def _starts_with_any(text: str) -> bool:
+    """前缀匹配寒暄词典（B3 小项：全锚定会漏掉复合闲聊）。"""
+    low = text.strip().lower()
+    return any(low.startswith(p) for p in SMALLTALK_PREFIXES)
+
+
 def rule_route(question: str) -> str | None:
     """规则层判定。命中返回 route，不确定返回 None。"""
     q = question.strip()
     if not q:
         return None
 
-    # 2. smalltalk（强命中）
-    if _matches(SMALLTALK_PATTERNS, q):
+    # 2. smalltalk（强命中；前缀匹配以覆盖"你好，你是谁？"这类复合闲聊）
+    if _starts_with_any(q):
         return "smalltalk"
 
     # 3. out_of_scope（强命中，优先于 troubleshooting）
