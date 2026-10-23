@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"opspilot/backend/internal/buildinfo"
 	"opspilot/backend/internal/chat"
 	"opspilot/backend/internal/config"
 	"opspilot/backend/internal/db"
@@ -24,10 +25,15 @@ func main() {
 		log.Fatalf("配置错误: %v", err)
 	}
 
-	if cfg.AppEnv == "prod" {
-		gin.SetMode(gin.ReleaseMode)
-	} else {
-		gin.SetMode(gin.DebugMode)
+	// gin 运行模式：**环境变量 GIN_MODE 优先**（容器里由 Dockerfile 设为 release），
+	// 其次按 APP_ENV 推导。早期实现无条件 `SetMode` 会覆盖 GIN_MODE=release，
+	// 导致 release 镜像仍在 debug 模式（日志噪声 + 性能损耗）。
+	if os.Getenv("GIN_MODE") == "" {
+		if cfg.AppEnv == "prod" {
+			gin.SetMode(gin.ReleaseMode)
+		} else {
+			gin.SetMode(gin.DebugMode)
+		}
 	}
 
 	// 数据库连接
@@ -57,8 +63,14 @@ func main() {
 	r.Use(middleware.JWTAuth(cfg.JWTSecret))
 	r.Use(middleware.InternalAuth(cfg.AIServiceToken))
 
-	version := handlers.ServiceVersion()
-	health := handlers.NewHealthHandler(database, version, "", cfg.AIServiceURL)
+	// 构建信息（清 S3 挂账）：ldflags 注入，未注入时回落 dev/unknown
+	version := buildinfo.Version
+	if v := os.Getenv("APP_VERSION"); v != "" {
+		version = v // 环境变量优先（容器可覆盖）
+	}
+	health := handlers.NewHealthHandler(database, version, buildinfo.BuildTime, cfg.AIServiceURL)
+	log.Printf("启动: version=%s commit=%s build_time=%s mode=%s",
+		version, buildinfo.Commit, buildinfo.BuildTime, gin.Mode())
 	auth := handlers.NewAuthHandler(cfg)
 	handlers.RegisterAPIRoutes(r, health, auth)
 

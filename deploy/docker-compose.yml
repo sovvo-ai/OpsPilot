@@ -76,6 +76,9 @@ services:
         HTTPS_PROXY: ""
         http_proxy: ""
         https_proxy: ""
+        # 版本信息注入（清 S3 挂账）；未传时 Dockerfile 默认 dev/unknown
+        APP_VERSION: ${APP_VERSION:-dev}
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
     container_name: opspilot-backend
     restart: unless-stopped
     environment:

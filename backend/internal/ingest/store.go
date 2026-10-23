@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 // DocumentStatus 是摄取任务状态。
@@ -187,7 +189,16 @@ type IngestHTTPError struct {
 func (e *IngestHTTPError) Error() string { return e.Code }
 
 // CreateDocument 上传：前置校验 → 去重 → 同事务写入 documents/contents/job。
+// CreateDocument 创建文档（含 owner 级内容去重）。
+//
+// 并发安全：SELECT 查重与 INSERT 之间的竞态由唯一约束 + 23505 捕获兜底，
+// 冲突时返回 `deduplicated=true` 而非 500（S8 A10 §9.4-13 实测修复）。
 func CreateDocument(db *sql.DB, ownerID, filename string, data []byte) (*Document, error) {
+	return createDocument(db, ownerID, filename, data, 0)
+}
+
+// createDocument 实现主体；`retries` 仅用于并发去重后的有限重试。
+func createDocument(db *sql.DB, ownerID, filename string, data []byte, retries int) (*Document, error) {
 	title, text, err := ValidateUpload(filename, data)
 	if err != nil {
 		return nil, err
@@ -241,6 +252,22 @@ func CreateDocument(db *sql.DB, ownerID, filename string, data []byte) (*Documen
 		docID, ownerID, sourceTitle, hash, len(data), len([]rune(text)),
 	)
 	if err != nil {
+		// **并发去重竞态**（S8 A10 §9.4-13 实测发现）：
+		// SELECT 查重与 INSERT 之间存在窗口，两个并发请求可同时通过查重、
+		// 随后第二个撞 `uq_documents_owner_hash` 唯一约束 → 早期实现直接 500。
+		// 正确语义是"另一请求已落库"——回滚本事务，回查已存在的行并返回
+		// `deduplicated=true`（不重复计费、不重复摄取）。
+		if isUniqueViolation(err) {
+			_ = tx.Rollback()
+			if doc := lookupExisting(db, ownerID, hash, sourceTitle, len(data)); doc != nil {
+				return doc, nil
+			}
+			// 回查不到（极端竞态：对方也回滚了）—— 限一次重试，避免无限递归
+			if retries < 2 {
+				return createDocument(db, ownerID, filename, data, retries+1)
+			}
+			return nil, fmt.Errorf("并发去重后回查失败（已重试 %d 次）", retries)
+		}
 		return nil, fmt.Errorf("insert documents: %w", err)
 	}
 
@@ -661,4 +688,52 @@ func newUUID() string {
 	b[8] = (b[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
 		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+// isUniqueViolation 判断是否为 PostgreSQL 唯一约束冲突（SQLSTATE 23505）。
+//
+// 用于并发去重的兜底：SELECT 查重与 INSERT 之间的竞态窗口无法用
+// `SELECT ... FOR UPDATE` 消除（无行可锁），只能靠唯一约束 + 捕获冲突。
+func isUniqueViolation(err error) bool {
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) {
+		return pqErr.Code == "23505"
+	}
+	// 兜底：驱动未暴露 pq.Error 时按文本判定（不理想但不会静默 500）
+	return err != nil && strings.Contains(err.Error(), "23505")
+}
+
+// lookupExisting 在并发去重冲突后回查已存在的文档行。
+//
+// 返回 nil 表示未找到（极端竞态下对方也回滚了），调用方可有限重试。
+func lookupExisting(db *sql.DB, ownerID, hash, fallbackTitle string, byteSize int) *Document {
+	var (
+		id      string
+		title   string
+		status  string
+		attempt int
+	)
+	err := db.QueryRow(
+		`SELECT d.id, d.title, j.status, j.attempt
+		   FROM documents d
+		   JOIN ingest_jobs j ON j.doc_id = d.id
+		  WHERE d.owner_id = $1 AND d.source_hash = $2 AND d.deleted_at IS NULL`,
+		ownerID, hash,
+	).Scan(&id, &title, &status, &attempt)
+	if err != nil {
+		return nil
+	}
+	if title == "" {
+		title = fallbackTitle
+	}
+	return &Document{
+		ID:         id,
+		OwnerID:    ownerID,
+		Title:      title,
+		SourceHash: hash,
+		ByteSize:   byteSize,
+		Status:     DocumentStatus(status),
+		Attempt:    attempt,
+		Dedup:      true, // 并发冲突语义等同"已存在"→ 去重命中
+	}
 }
