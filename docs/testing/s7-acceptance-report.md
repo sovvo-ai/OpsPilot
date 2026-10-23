@@ -2,10 +2,10 @@
 
 | 项 | 值 |
 |---|---|
-| 日期 | 2026-10-23 17:0x – 18:5x（GMT+8） |
+| 日期 | 2026-10-23 17:0x – 20:4x（GMT+8） |
 | 执行人 | 开发侧（AI 辅助） |
-| 依据 | `docs/architecture/tool-policy.md`（§1–§7）、`docs/prd/PRD.md` §11.1 A7、FR-23~FR-28 |
-| 结论 | **S7 通过**：A7 落成真实测试文件（61 例全绿）；工具接线端到端验证；CI 静态禁令已证明会拦 |
+| 依据 | `docs/architecture/tool-policy.md`（§1–§7）、`docs/prd/PRD.md` §11.1 A7、FR-23~FR-28、计划书 §6.2 |
+| 结论 | **S7 已关账（2026-10-23）**：A7 落成真实测试（61 例）；工具接线端到端验证；CI 静态禁令已证明会拦；审查 S7-A/B/C 三处装配错误已修 |
 | 交付 | `app/tools/` 三纯函数 + 封闭注册表 + 执行器；`tool_calls` 落库 |
 
 > **脱敏声明**：`DASHSCOPE_API_KEY`、`AI_SERVICE_TOKEN`、`JWT_SECRET`、`POSTGRES_PASSWORD` 一律从 `deploy/.env` 读取并打码，从未打印。
@@ -31,8 +31,9 @@
 | 端到端工具接线 | tool_calls 行 + answered + FR-18 三类 | **全部满足** | **通过** |
 | **S7-A** 附日志路由 | 招牌场景不拒答 | **route=troubleshooting → answered** | **通过** |
 | **S7-B** 端口冲突提取 | 同端口多行报冲突 | **"发现 1 处冲突"** | **通过** |
+| **S7-C** 端口提取输入源 | 清单在 attach_log 时报冲突 | **"发现 1 处冲突"**（真实链路） | **通过** |
 
-质量门禁：`go vet` 干净、`go test ./...` 全绿；`pytest` **182 passed**（S6 时 93 → 新增 89）。
+质量门禁：`go vet` 干净、`go test ./...` 全绿；`pytest` **186 passed**（S6 时 93 → 新增 93）。
 
 ---
 
@@ -205,6 +206,28 @@ node_path   = ['router', 'retrieval', 'troubleshoot', 'evidence', 'final']
 | `8080 nginx` + `8080 java` | 提取 1 条 → "**未发现冲突**" | 提取 2 条 → "**发现 1 处冲突**" |
 | 真实链路回答 | "未发现占用冲突" | "**工具检测已发现 1 处端口冲突[工具]**" |
 
+### 5.3b S7-C：端口提取的**输入源**接线错误（装配错误）
+
+| 项 | 内容 |
+|---|---|
+| 现象 | 问题一句话 + **端口清单贴在 attach_log**（8080 双进程）→ 仍输出"未发现 8080 端口冲突" |
+| 根因 | `troubleshoot.py` 调用点只喂 `question`：`_extract_ports(question)`。而**端口清单这种多行数据用户就是贴在附件里的** → 提取到兜底占位 `{8080,tcp}` → 工具按"无重复端口"判无冲突 |
+| 性质 | **装配错误，不是纯函数错误** —— `_extract_ports` 本身完全正确（上一轮 `TestPortExtraction` 全绿），错在**调用点喂了什么文本** |
+| 修复 | ① 输入源改为 `attach_log + "\n" + question`（两者线索都不丢）；② 触发条件 `PORT_HINT.search(port_text)` 同样改用合并文本；③ 工具 1 `analyze_error_log` 的输入源一并修正（原 `attach_log or question` 在两者都存在时丢掉 question 的错误线索） |
+| 回归 | `test_graph.py::TestPortExtractionSourceWiring`（4 例）—— **故意走 `run_turn` 全链路**，纯函数测试不得再充当它的替身 |
+
+**修复前后实测对比**（Python httpx 客户端，走对外 `/sessions/{id}/messages`）：
+
+输入：问题 `服务起不来，帮我看看` + `attach_log = "8080 nginx 正在监听\n8080 java 也在用"`
+
+| | 修复前 | 修复后 |
+|---|---|---|
+| `tool_calls` | `[analyze_error_log]`（端口工具**未调用**） | `[analyze_error_log, check_port_conflict]` |
+| 工具证据 | 无冲突 | **"检查 2 项端口，发现 1 处冲突"** |
+| 回答 | 未提及端口冲突 | "**端口冲突：工具检测到 1 处端口冲突，可能直接导致服务启动失败**" |
+
+> **本轮循环的反复模式（值得记）**：S7-A（router 不看 attach_log）、S7-B（端口提取去重）、S7-C（端口提取输入源）—— 三次都是**"函数对、装配错"**，而单测盲区都在"没测调用点喂了什么文本"。已在 `test-plan` 补 G7 记录该教训（含中文验收一律用 Python httpx）。
+
 ### 5.4 工具证据被丢弃（新发现）
 
 | 项 | 内容 |
@@ -257,7 +280,8 @@ cd ai-service && pytest -q
 - **A7 硬账已还**：注入用例从"文档表格"落成 61 例真实测试（`tests/unit/` + `tests/integration/`）。
 - 端到端验证：贴 CrashLoopBackOff 日志 → `tool_calls` 行 + `answered` + FR-18 三类证据标注齐全。
 - CI 静态禁令为**真闸门**（已证明会拦），且修正了 `re.compile` 假阳性。
-- **审查 S7-A / S7-B 已修**：PRD §2.2-S2 招牌场景（附日志提问）不再拒答；端口冲突不再被去重逻辑吃掉。
+- **审查 S7-A / S7-B / S7-C 已修**：PRD §2.2-S2 招牌场景（附日志提问）不再拒答；端口冲突不再被去重逻辑吃掉；端口提取的输入源已含 attach_log（清单贴在附件也能报冲突）。
+- **S7 已关账（2026-10-23）**：审查方确认只验 S7-C 那条节点级用例的真实输出即可；该用例已通过真实链路验证（见 §5.3b）。
 
 ### 遗留（诚实记录）
 

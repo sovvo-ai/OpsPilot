@@ -187,9 +187,12 @@ def troubleshoot_node(
         question = state.get("question", "")
 
         # 工具 1：analyze_error_log
-        if attach_log or LOG_HINT.search(question):
+        # S7-C：输入源同样要合并 attach_log 与 question（早期用 `attach_log or question`
+        # 会在两者都存在时丢掉 question 里的错误线索）。
+        log_text = f"{attach_log}\n{question}" if attach_log else question
+        if log_text and (attach_log or LOG_HINT.search(question)):
             if budget.try_acquire_tool():
-                out = tool_executor.invoke_safe("analyze_error_log", {"log_text": attach_log or question})
+                out = tool_executor.invoke_safe("analyze_error_log", {"log_text": log_text})
                 budget.consume_tool()
                 tool_calls.append(_as_record(out))
                 if out["status"] == "ok":
@@ -207,12 +210,17 @@ def troubleshoot_node(
                 if "tool_skipped_budget" not in reasons:
                     reasons.append("tool_skipped_budget")
 
-        # 工具 2：check_port_conflict（问句含端口线索）
-        if PORT_HINT.search(question):
+        # 工具 2：check_port_conflict
+        # **S7-C 修正（关键）**：端口清单这种多行数据，用户就是**贴在附件里**的，
+        # 触发判定与提取都必须看 attach_log —— 早期只吃 question，导致
+        # "问题一句话 + 清单在 attach_log" 场景提取到兜底占位、输出"未发现冲突"
+        # （装配错误：纯函数 `_extract_ports` 本身是对的，错在调用点喂了错误文本）。
+        port_text = f"{attach_log}\n{question}" if attach_log else question
+        if PORT_HINT.search(port_text):
             if budget.try_acquire_tool():
                 out = tool_executor.invoke_safe(
                     "check_port_conflict",
-                    {"ports": _extract_ports(question), "expected_owner": None},
+                    {"ports": _extract_ports(port_text), "expected_owner": None},
                 )
                 budget.consume_tool()
                 tool_calls.append(_as_record(out))

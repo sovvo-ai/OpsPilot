@@ -684,6 +684,95 @@ class TestPortExtraction:
         assert "发现 1 处冲突" in seen.get("prompt", ""), "工具证据里没有报出冲突"
 
 
+class TestPortExtractionSourceWiring:
+    """S7-C 回归：端口的**输入源**必须包含 attach_log。
+
+    真实缺陷（装配错误，非纯函数错误）：`_extract_ports` 本身正确，
+    但调用点只喂 `question`。而"端口清单"这种多行数据用户就是**贴在附件里**的 ——
+    问题只说"起不来"时，提取到的只是兜底占位，最终输出"未发现冲突"。
+
+    **教训**：上一轮的 `TestPortExtraction` 全是纯函数直测，没测调用点喂了什么文本
+    —— 这正是本循环反复出现的模式："函数对、装配错，单测盲区"。
+    本用例**故意走 run_turn 全链路**，纯函数测试不得再充当它的替身。
+    """
+
+    PORT_LIST = "8080 nginx 正在监听\n8080 java 也在用"
+
+    def test_attach_log_is_used_as_port_source(self, monkeypatch):
+        """清单放 attach_log + 问题只说"起不来" → 必须报出冲突（走 run_turn）。"""
+        patch_cfg(monkeypatch)
+        from app.tools import ToolExecutor
+
+        ex = ToolExecutor()
+        seen: dict[str, str] = {}
+
+        def llm(role, prompt):
+            if role == "troubleshoot":
+                seen["prompt"] = prompt
+            return "端口冲突[1]"
+
+        r = run(
+            "服务起不来，帮我看看",
+            llm_call=llm,
+            tool_executor=ex,
+            retrieve_fn=lambda o, q, c: CHUNKS,
+            attach_log=self.PORT_LIST,
+        )
+        names = [c["tool_name"] for c in ex.calls]
+        assert "check_port_conflict" in names, (
+            f"清单在 attach_log 时未调用端口工具：{names}"
+        )
+        assert "发现 1 处冲突" in seen.get("prompt", ""), (
+            "工具证据未报出冲突（说明提取的输入源不含 attach_log）"
+        )
+        assert r["answer_type"] == "answered"
+
+    def test_source_merges_attach_log_and_question(self):
+        """输入源 = attach_log + question（两边都有线索时都不丢）。"""
+        from app.graph.troubleshoot import _extract_ports
+
+        # 端口清单在附件，问题里另提一个端口
+        merged = f"{self.PORT_LIST}\n3306 mysql"
+        ports = _extract_ports(merged)
+        assert [p["port"] for p in ports] == [8080, 8080, 3306]
+
+    def test_question_only_still_works(self):
+        """清单直接写在问题里时也能工作（不因修复而回归）。"""
+        from app.tools import ToolExecutor
+
+        from app.graph.budget import Budget
+        from app.graph.troubleshoot import troubleshoot_node
+
+        ex = ToolExecutor()
+        seen: dict[str, str] = {}
+
+        def llm(role, prompt):
+            seen["prompt"] = prompt
+            return "x"
+
+        troubleshoot_node(
+            {"question": "8080 nginx 和 8080 java 端口冲突吗？", "route": "troubleshooting",
+             "chunks": []},
+            cfg={}, budget=Budget(), llm_call=llm, tool_executor=ex,
+        )
+        assert "check_port_conflict" in [c["tool_name"] for c in ex.calls]
+        assert "发现 1 处冲突" in seen["prompt"]
+
+    def test_normal_question_without_port_does_not_call_tool(self):
+        """无端口线索时不调用端口工具（避免噪声）。"""
+        from app.tools import ToolExecutor
+
+        from app.graph.budget import Budget
+        from app.graph.troubleshoot import troubleshoot_node
+
+        ex = ToolExecutor()
+        troubleshoot_node(
+            {"question": "Pod 一直重启怎么排查？", "route": "troubleshooting", "chunks": []},
+            cfg={}, budget=Budget(), llm_call=lambda r, p: "x", tool_executor=ex,
+        )
+        assert "check_port_conflict" not in [c["tool_name"] for c in ex.calls]
+
+
 # ---------------------------------------------------------------------------
 # 预算（A6）
 # ---------------------------------------------------------------------------
