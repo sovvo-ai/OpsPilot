@@ -67,6 +67,15 @@
 | `huggingface.co` / `hf-mirror.com` | 均超时 000 | 不可达（本项目已不依赖） |
 | `modelscope.cn` | 302 / 0.7s | 可达（已不依赖） |
 
+**容器出网（S4 实测补充，来源=实测）**：
+
+| 项 | 观测 | 处置 |
+|---|---|---|
+| Docker 容器出网方式 | 本机容器**可直连外网**（`dashscope.aliyuncs.com` 直连可达）；走宿主代理 `host.docker.internal:7890` 反而 `Connection refused` | 容器内代理留空，外呼客户端 `trust_env=False` |
+| 代理变量继承 | Docker Desktop 会把宿主 `HTTP(S)_PROXY` **（含小写 `http_proxy`/`https_proxy`）** 注入容器；compose 只清大写变量时小写仍泄漏，容器内 `127.0.0.1` 指向容器自身 → 出网失败 | 外呼显式 `trust_env=False`；仅当配置 `OUTBOUND_PROXY` 时才走代理（与 Go 侧 `Transport{Proxy: nil}` 对齐） |
+
+> 这是 **S4 摄取首轮近半用例失败的真实原因**（Embedding 全部 `EMBEDDING_FAILED / Connection refused`）：容器继承了宿主代理指向，而宿主代理客户端未对容器可达。属**环境前置条件**，非业务缺陷。
+
 ### 1.6 端口占用（必须避让）
 
 | 端口 | 状态 | 占用者 | OpsPilot 处置 |
@@ -96,6 +105,7 @@
 | E4 | 磁盘仅剩 31G | 镜像瘦身；`docker builder prune` 写入 Makefile |
 | E5 | 端口冲突 | 55432 / 8081 / 不用 Redis |
 | E6 | Bash PATH 缺少 `make`；清华镜像出现假冒高版本 Python 包 | make 使用绝对路径 `/c/Program Files (x86)/GnuWin32/bin/make.exe`；ai-service 依赖锁定官方 PyPI 并离线 vendor 化 |
+| E7 | Docker 容器继承宿主代理变量（含小写），容器内 `127.0.0.1` 指向自身 → 出网失败（S4 实测） | 外呼客户端 `trust_env=False`；容器内代理留空。详见 §1.5 容器出网表 |
 
 ---
 

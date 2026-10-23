@@ -742,7 +742,7 @@ DELETE /documents/{id}
 | A11 | 一键启动 | 干净环境 `docker compose up -d` → 冒烟通过 ≤ 5 分钟 |
 | A12 | 评测真实性 | 报告含 git commit 与逐题结果；未跑项标 `NOT RUN` |
 | A13 | 身份与资源隔离 | 两个 dev token 交叉访问对方的**文档 / 会话 / 消息 / 轨迹**均 404；交叉 `reingest` / `DELETE` 均 404；跨用户检索不召回对方切片；跨用户上传相同内容各自建档；全部走真实 HTTP + 真实 DB |
-| A14 | 异步一致性不变量 | 任意用例执行后：① 不存在 `visible=TRUE` 但状态非 `completed` 的切片；② 不存在 `completed` 但无 `visible` 切片的文档；③ 不存在 `status=deleting` 却已删除 `documents` 行的情况；④ 同一 job 无两次成功抢占（并发 100 轮无违例）。用 SQL 断言，见 `docs/testing/test-matrix.md` §7 |
+| A14 | 异步一致性不变量 | 任意用例执行后：① 不存在 `visible=TRUE` 且任务状态 **既非 `completed` 也非 `deleting`** 的切片（`deleting` 窗口内允许 `visible=TRUE`，检索由 FR-16 双重过滤排除，见 v1.9 裁定）；② 不存在 `completed` 但无 `visible` 切片的文档；③ 不存在 `status=deleting` 却已删除 `documents` 行的情况；④ 同一 job 无两次成功抢占（并发 100 轮无违例）。用 SQL 断言，见 `docs/testing/test-matrix.md` §7 |
 | A15 | 删除彻底性 | 删除完成后 `documents` / `document_contents` / `ingest_jobs` / `doc_chunks` 四表均无该 `doc_id` 残留；`deleting` 期间不出现"记录已删、向量还在" |
 
 ### 11.2 质量验收
@@ -853,6 +853,14 @@ V1.1 不改变 V1 的任何验收项；V1 通过后再做 V1.1，V1.1 期间不�
 ---
 
 ## 14. 修订记录
+
+### v1.9（2026-10-23）— A14① 断言口径修正（外部审查裁定）
+
+> 触发依据：外部审查指出 A14① 文案存在缺陷——`deleting` 窗口内"`visible` 切片 + 非 `completed` 状态"是合法状态。实测复现：文档进入 `deleting` 后，原口径计数为 **1 ≠ 0**；修正口径为 0。正确性无洞（检索由 FR-16 双重过滤排除），缺陷仅在断言文案。
+
+| # | 裁定项 | 修订 | 影响文件 |
+|---|---|---|---|
+| X1-A14 | A14① 写"不存在 `visible=TRUE` 但状态非 `completed` 的切片"，漏掉 `deleting` 窗口；该文案过严会误报，且原 S4 报告"全 0"源于断言时机错过删除窗口（假绿风险） | A14① 改为"不存在 `visible=TRUE` 且状态**既非 `completed` 也非 `deleting`** 的切片"；test-matrix I-07 同步；新增 I-09"删除窗口内断言不误报"用例 | §11.1 A14、`docs/testing/test-matrix.md` I-07/I-09、`scripts/s4_acceptance.py` |
 
 ### v1.8（2026-10-23）— S3 审查修复（JWT 空密钥 + FR-02 dev 裁决 + R1/R2/环境事实补录）
 

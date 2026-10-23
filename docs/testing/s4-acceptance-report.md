@@ -362,3 +362,46 @@ cd ai-service && pytest -q     # 有 DB + 有 key / 有 DB 无 key / 无 DB 无 
 - 核心链路（上传 → 校验 → 事务 → 派发 → 切片 → Embedding → 不可见写入 → 两阶段发布 → 清理）全部走通并经真实数据验证。
 - 三项真实缺陷（代理污染、重摄取主键冲突、脚本构造缺陷）已定位并修复，其中两项补了回归测试。
 - HNSW 真实语料 Recall@5 在 ef 40/100/200 三档下均为 1.000，S1 遗留的 R1/R2 欠账结清。
+
+---
+
+## 8. 补账修订（2026-10-23，外部审查裁定）
+
+首版报告存在两处需更正的记录，已回写 PRD v1.9 / test-matrix v1.2。
+
+### 8.1 A14① 文案缺陷（账 1）
+
+| 项 | 内容 |
+|---|---|
+| 缺陷 | 原 A14① 写"不存在 `visible=TRUE` 但状态非 `completed` 的切片"，**漏了 `deleting` 窗口**：文档进入 `deleting` 后，旧世代 `visible=TRUE` 切片在 watchdog 收敛前仍存在，该口径会误报 |
+| 实测复现 | 见 §8.2 |
+| 性质 | **正确性无洞**——检索由 FR-16 双重过滤（`visible=TRUE` ∧ `status='completed'` ∧ `deleted_at IS NULL`）保证，`deleting` 文档的可见切片从不参与检索。缺陷仅在**断言文案过严** |
+| 修正 | A14① → `status NOT IN ('completed','deleting')`；test-matrix I-07 同步；新增 I-09 |
+| 来源 | 外部审查裁定（记 PRD v1.9） |
+
+### 8.2 首版"全 0"的假绿风险更正（账 1 附带）
+
+首版报告 §4.10 的 A14"全 0"**并非修正口径结果，而是断言时机错过删除窗口**：脚本中 A14 排在 A15 之前，A15 尚未制造 `deleting` 窗口，断言自然为 0 —— 属**假绿**。
+
+已修正执行顺序（A15 提前到 A14 之前），并由 A15 自身在**窗口内**执行 I-09 断言。修正后真实输出：
+
+```
+【A15】删除链路、删除窗口内断言（I-09）与删除彻底性
+  待删除文档就绪: chunks=2, visible=2
+  DELETE 响应: status_code=202, ingest_status=deleting
+  deleting 期间: documents 行存在=True, job.status=deleting, deleted_at=已置位, visible 切片=2
+  I-09 口径对比: 原口径(status<>'completed')=2（会误报） | 修正口径(status NOT IN completed,deleting)=0
+  I-09 FR-16 检索可见该文档切片数=0（应为 0，证明被过滤排除）
+  ✅ I-09 删除窗口内断言不误报
+  四表残留计数（轮询到终态后）: {'documents': 0, 'document_contents': 0, 'ingest_jobs': 0, 'doc_chunks': 0}
+```
+
+**结论**：窗口内原口径计数 **2**（误报），修正口径 **0**，FR-16 检索 **0** —— 文案缺陷与"正确性无洞"同时得证。修正后全套仍 **13/13 通过**（新增 I-09 并入 A15 记分）。
+
+### 8.3 代理环境事实补录（账 2）
+
+§5.1 记录的"容器外呼被宿主代理污染"已补入 `docs/00-planning/00-environment-and-plan.md` §1.5（容器出网表）与 §1.8（风险 E7），标记**来源=实测**：Docker Desktop 会把宿主 `HTTP(S)_PROXY`（含小写 `http_proxy`/`https_proxy`）注入容器，宿主代理客户端未对容器可达时容器出网失败 —— 这是 S4 首轮近半用例失败的真实原因，属**环境前置条件**，非业务缺陷。
+
+### 8.4 A15 断言时机注记（账 3）
+
+已在 `scripts/s4_acceptance.py` 的 `test_a15_deleting_chain` 文档字符串写入 ⚠️ 注记：删除**异步收敛**，窗口内断言必须紧接 DELETE 立即执行、彻底性断言必须轮询到终态，防止 S8 回归误判。

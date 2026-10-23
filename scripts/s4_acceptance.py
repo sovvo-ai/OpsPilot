@@ -341,7 +341,7 @@ class DBHelper:
                 SELECT count(*) AS n
                 FROM doc_chunks c
                 JOIN ingest_jobs j ON j.doc_id = c.doc_id
-                WHERE c.visible = TRUE AND j.status <> 'completed'
+                WHERE c.visible = TRUE AND j.status NOT IN ('completed','deleting')
             """,
             "i_completed_has_visible": """
                 SELECT count(*) AS n
@@ -429,6 +429,53 @@ class DBHelper:
                     cur.execute(sql, params)
                     results[tbl] = cur.fetchone()["n"]
         return results
+
+    def visible_non_completed_count(self, include_deleting: bool) -> int:
+        """A14① 计数，用于对比"原口径会误报 / 修正口径为 0"。
+
+        include_deleting=True  → 修正口径：status NOT IN ('completed','deleting')
+        include_deleting=False → 原口径：  status <> 'completed'（会把 deleting 窗口算进来）
+        """
+        if include_deleting:
+            sql = """
+                SELECT count(*) AS n
+                FROM doc_chunks c
+                JOIN ingest_jobs j ON j.doc_id = c.doc_id
+                WHERE c.visible = TRUE AND j.status NOT IN ('completed','deleting')
+            """
+        else:
+            sql = """
+                SELECT count(*) AS n
+                FROM doc_chunks c
+                JOIN ingest_jobs j ON j.doc_id = c.doc_id
+                WHERE c.visible = TRUE AND j.status <> 'completed'
+            """
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql)
+                return cur.fetchone()["n"]
+
+    def retrievable_chunks_of_doc(self, doc_id: str) -> int:
+        """I-09：按 FR-16 双重过滤，该文档"实际可被检索到"的切片数。
+
+        FR-16：`doc_chunks.visible=TRUE` ∧ `ingest_jobs.status='completed'`
+               ∧ `documents.deleted_at IS NULL` ∧ owner 匹配。
+        'deleting' 文档在此过滤下必然为 0，这正是"正确性无洞"的依据。
+        """
+        sql = """
+            SELECT count(*) AS n
+            FROM doc_chunks c
+            JOIN ingest_jobs j ON j.doc_id = c.doc_id
+            JOIN documents d ON d.id = c.doc_id
+            WHERE c.doc_id = %s
+              AND c.visible = TRUE
+              AND j.status = 'completed'
+              AND d.deleted_at IS NULL
+        """
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (doc_id,))
+                return cur.fetchone()["n"]
 
     def all_visible_chunks(self) -> list[dict[str, Any]]:
         with self.connect() as conn:
@@ -869,15 +916,29 @@ def test_t03_late_vs_new_run(
 
 
 def test_a15_deleting_chain(client: APIClient, db: DBHelper) -> bool:
-    """A15 删除彻底性：DELETE → deleting 状态 → watchdog 清向量 → 四表无残留。
+    """A15 删除彻底性 + I-09 删除窗口内断言不误报。
 
     断言：
     1. DELETE 后接口返回 202 且状态为 deleting，`documents.deleted_at` 已置位，
-       此时三表记录仍存在（不出现"记录已删、向量还在"的反向情况）；
-    2. watchdog 收敛后，documents / document_contents / ingest_jobs / doc_chunks
+       此时记录仍在（不出现"记录已删、向量还在"的反向情况）；
+    2. **删除窗口内**（deleting + 旧世代 visible 切片共存）：
+       - 修正口径的 A14①（status NOT IN ('completed','deleting')）计数必须为 0；
+       - FR-16 检索 SQL 必须不返回该文档任何切片（过滤而非删除才是正确性保证）。
+       这一步必须在"发起删除后、watchdog 收敛前"执行，否则窗口已关闭，断言退化。
+    3. watchdog 收敛后，documents / document_contents / ingest_jobs / doc_chunks
        四表均无该 doc_id 残留。
+
+    ⚠️ **断言时机敏感（勿删此注记）**：删除是**异步收敛**的——DELETE 只把状态
+    置为 `deleting` 并置 `deleted_at`，真正的清向量与删行由 watchdog 在下一轮
+    （间隔 60s）完成。因此：
+      - 想在**删除窗口内**验证不变量，必须在 DELETE 之后**立即**断言，且**不得**
+        先等收敛，否则窗口已关闭、断言变成"事后跑"，失去证明力（I-09 的意义）。
+      - 想验证**删除彻底性**，必须**轮询到终态**（四表残留全 0）再下结论，不能
+        在固定时刻取一次快照就判定——快照可能刚好落在收敛过程中，导致误判。
+    历史上 S4 首轮报告的 A14"全 0"正是踩了前者：A14 跑在 A15 之前，删除窗口尚未
+    产生，属**假绿**。本用例修正执行顺序并显式覆盖窗口内断言，防止 S8 回归误判。
     """
-    print("\n【A15】删除链路与删除彻底性")
+    print("\n【A15】删除链路、删除窗口内断言（I-09）与删除彻底性")
 
     doc_id, tmp = upload_and_wait(client, db, "a15")
     if not doc_id:
@@ -900,16 +961,28 @@ def test_a15_deleting_chain(client: APIClient, db: DBHelper) -> bool:
         drop_doc(db, doc_id, tmp)
         return False
 
-    # 删后立即查：deleted_at 已置位，且记录仍在（不存在"向量还在但记录已删"）
+    # 2. 【删除窗口内】立即断言（不得先等收敛，否则窗口关闭）
     state = db.get_doc_state(doc_id)
     in_deleting = state is not None and state["status"] == "deleting"
+    visible_in_window = db.chunk_count(doc_id, visible=True)
     print(
         f"  deleting 期间: documents 行存在={state is not None}, "
         f"job.status={state['status'] if state else None}, "
-        f"deleted_at={'已置位' if (state and state.get('deleted_at')) else '空'}"
+        f"deleted_at={'已置位' if (state and state.get('deleted_at')) else '空'}, "
+        f"visible 切片={visible_in_window}"
     )
 
-    # 2. 轮询等待 watchdog 清理（间隔 60s，最多等 150s）
+    # I-09：修正口径 A14① 在窗口内必须为 0（原口径会误报）
+    old_scope = db.visible_non_completed_count(include_deleting=False)
+    new_scope = db.visible_non_completed_count(include_deleting=True)
+    retrieved = db.retrievable_chunks_of_doc(doc_id)
+    print(f"  I-09 口径对比: 原口径(status<>'completed')={old_scope}（会误报）"
+          f" | 修正口径(status NOT IN completed,deleting)={new_scope}")
+    print(f"  I-09 FR-16 检索可见该文档切片数={retrieved}（应为 0，证明被过滤排除）")
+    i09_ok = new_scope == 0 and retrieved == 0
+    print(f"  {PASS_MARK if i09_ok else FAIL_MARK} I-09 删除窗口内断言不误报")
+
+    # 3. 轮询等待 watchdog 清理（间隔 60s，最多等 150s）——验证彻底性必须等终态
     deadline = time.monotonic() + 150
     cleaned = False
     while time.monotonic() < deadline:
@@ -920,11 +993,11 @@ def test_a15_deleting_chain(client: APIClient, db: DBHelper) -> bool:
         time.sleep(3)
 
     counts = db.residual_counts(doc_id)
-    print(f"  四表残留计数: {counts}")
+    print(f"  四表残留计数（轮询到终态后）: {counts}")
     for tbl, n in counts.items():
         print(f"    {PASS_MARK if n == 0 else FAIL_MARK} {tbl}: {n}")
 
-    ok = in_deleting and cleaned
+    ok = in_deleting and i09_ok and cleaned
     print(f"  {PASS_MARK if ok else FAIL_MARK} A15 删除彻底性")
     if not cleaned:
         drop_doc(db, doc_id, tmp)  # watchdog 未清干净时兜底清理
@@ -1146,14 +1219,16 @@ def main() -> int:
     # 8. T-07 超时阈值
     scorecard["T07_timeout_threshold"] = test_t07_timeout_threshold(db)
 
-    # 9. A14 / T-04 / T-05
+    # 9. A15 删除链路：内含"删除窗口内断言（I-09）"+ 轮询到终态验证彻底性。
+    #    必须排在 A14 之前——A15 会真实制造 deleting 窗口，且自身覆盖窗口内断言；
+    #    待其收敛后再跑 A14 全局不变量，避免"删除窗口尚未产生 → 假绿"。
+    scorecard["A15_deleting_chain"] = test_a15_deleting_chain(client, db)
+
+    # 10. A14 / T-04 / T-05（在删除窗口收敛后跑全局断言）
     scorecard["A14_invariants"] = test_a14_invariants(db)
 
-    # 10. T-09
+    # 11. T-09
     scorecard["T09_chunk_count"] = test_t09_chunk_count_consistency(db)
-
-    # 11. A15 删除链路与删除彻底性
-    scorecard["A15_deleting_chain"] = test_a15_deleting_chain(client, db)
 
     # 12. HNSW Recall
     scorecard["HNSW_recall"] = test_hnsw_recall(dsn, env, client)

@@ -114,8 +114,9 @@
 | I-04 | `processing` 必有 `current_run_token` 与 `started_at` |
 | I-05 | 不存在 `doc_id` 对应的多条 `ingest_jobs`（UNIQUE 保证） |
 | I-06 | `deleting` 的文档 `deleted_at` 必非空 |
-| I-07 | 所有 `visible=true` 的切片，其 `doc_id` 对应任务状态为 `completed` |
+| I-07 | 所有 `visible=true` 的切片，其 `doc_id` 对应任务状态 **∈ {`completed`, `deleting`}`**（`deleting` 窗口内允许 `visible=TRUE`；检索由 FR-16 双重过滤排除，不构成正确性缺陷。见 v1.2 修订） |
 | I-08 | 所有 `visible=true` 的切片，其 `run_token = published_run_token` |
+| I-09 | **删除窗口内断言不误报**：文档处于 `deleting` 且仍有 `visible=TRUE` 切片时，I-07（修正口径）计数必须为 **0**，同时 FR-16 检索 SQL 必须不返回该文档任何切片（证明"过滤而非删除"才是正确性保证） |
 
 ---
 
@@ -130,6 +131,17 @@
 ---
 
 ## 9. 修订记录
+
+### v1.2（2026-10-23）— A14① 断言口径修正（外部审查裁定）
+
+| # | 问题 | 修复 |
+|---|---|---|
+| I-07 修 | 原 I-07 写"所有 `visible=true` 切片的对应任务状态为 `completed`"，**漏了 `deleting` 窗口**。实测证实：文档进入 `deleting`（`deleted_at` 已置位）后，旧世代 `visible=TRUE` 切片在 watchdog 收敛前仍存在，此时原口径计数为 **1**（非 0），属断言文案缺陷 | I-07 改为 `status ∈ {completed, deleting}`；PRD A14① 同步 |
+| I-09 增 | 缺"删除窗口内执行断言不误报"的用例 | 新增 I-09：`deleting` + `visible` 切片共存时修正口径必须为 0，且 FR-16 检索 SQL 必须不返回该文档任何切片 |
+
+> **性质说明**：正确性无洞——检索由 FR-16 双重过滤（`visible=TRUE` ∧ `status='completed'` ∧ `deleted_at IS NULL` ∧ `owner_id`）保证，`deleting` 文档的可见切片从不参与检索。缺陷仅在**断言文案**：口径过严会误报。来源=外部审查裁定。
+
+**用例总数**：57 → **58 条**（新增 I-09）。
 
 ### v1.1（2026-10-22 19:40）
 
