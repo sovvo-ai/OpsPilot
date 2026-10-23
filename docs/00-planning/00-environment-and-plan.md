@@ -95,6 +95,7 @@
 | E3 | 中文路径 + UTF-8 | 全链路 UTF-8；文件名 NFC 规范化 |
 | E4 | 磁盘仅剩 31G | 镜像瘦身；`docker builder prune` 写入 Makefile |
 | E5 | 端口冲突 | 55432 / 8081 / 不用 Redis |
+| E6 | Bash PATH 缺少 `make`；清华镜像出现假冒高版本 Python 包 | make 使用绝对路径 `/c/Program Files (x86)/GnuWin32/bin/make.exe`；ai-service 依赖锁定官方 PyPI 并离线 vendor 化 |
 
 ---
 

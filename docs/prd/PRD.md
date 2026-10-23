@@ -2,9 +2,9 @@
 
 | 项 | 值 |
 |---|---|
-| 文档版本 | v1.7 |
-| 状态 | **已冻结（2026-10-22 评审通过）。仅允许 S1 SPIKE 实测结果触发修改；纯措辞/结构性打磨一律拒绝** |
-| 日期 | 2026-10-22 |
+| 文档版本 | v1.8 |
+| 状态 | **已冻结（2026-10-22 评审通过；2026-10-23 S3 审查修复入 v1.8）** |
+| 日期 | 2026-10-23 |
 | 上游依据 | `docs/00-planning/00-environment-and-plan.md` v4.4 |
 | 适用范围 | V1（后端闭环）+ V1.1（轻量 Web + 流式） |
 | 编写约束 | 本 PRD 不含用户调研结论；所有"用户诉求"均为**从项目定位推导的假设**，已在 §13 标注 |
@@ -365,7 +365,7 @@ DELETE /documents/{id}
 | ID | 需求 | 优先级 | 验收标准 |
 |---|---|---|---|
 | FR-01 | 提供开发环境 token 签发接口 `POST /api/v1/auth/dev-token?user=<name>` | P0 | 仅当 `APP_ENV=dev` 且 `ENABLE_DEV_AUTH=true` 时可用；`user` 参数**白名单限定**为 `demo-user` / `test-user-2`，缺省为 `demo-user`；返回 JWT（`sub=<user>`，有效期 2h）。非法 `user` → 400。非 dev 环境返回 404。上述分支各有测试 |
-| FR-02 | 所有业务接口需 Bearer JWT，缺失/过期/伪造 → 401 | P0 | 无 token、错 token、过期 token 三种情况均返回 401 且 `code=UNAUTHORIZED`；`/health/*` 豁免 |
+| FR-02 | 所有业务接口需 Bearer JWT，缺失/过期/伪造 → 401 | P0 | 无 token、错 token、过期 token 三种情况均返回 401 且 `code=UNAUTHORIZED`；`/health/*` 豁免。**dev 环境不自动注入用户**，必须通过 `POST /api/v1/auth/dev-token` 获取真实 JWT（v1.8 S3-M2 裁决） |
 | FR-03 | **开发环境身份隔离**：文档、切片、会话、消息、轨迹全部按 `owner_id` 隔离 | P0 | ① `demo-user` 与 `test-user-2` 交叉访问对方的**文档 / 会话 / 消息 / 轨迹**均返回 404（不泄露存在性）；② 交叉触发对方文档的 `reingest` / `DELETE` 同样 404；③ 检索接口与 `search_knowledge_base` 工具不得召回对方文档的切片；④ 跨用户上传相同内容**不得**被判为重复（见 FR-07）；⑤ 集成测试走真实 HTTP + 真实 DB，禁止 mock 绕过 |
 
 ### 6.2 文档上传与摄取
@@ -853,6 +853,18 @@ V1.1 不改变 V1 的任何验收项；V1 通过后再做 V1.1，V1.1 期间不�
 ---
 
 ## 14. 修订记录
+
+### v1.8（2026-10-23）— S3 审查修复（JWT 空密钥 + FR-02 dev 裁决 + R1/R2/环境事实补录）
+
+> 触发依据：S3 骨架代码审查发现 `JWTAuth` 空密钥可验证、dev 模式自动注入用户绕过 FR-02；同时补齐 S1 SPIKE 欠账记录。
+
+| # | 裁定项 | 修订 | 影响文件 |
+|---|---|---|---|
+| S3-M1 | JWT 空密钥漏洞：`secret=""` 时任意空 secret 签名 token 可通过校验 | 启动配置强制 `JWT_SECRET` / `AI_SERVICE_TOKEN` 非空；中间件增加空密钥拒绝兜底 | `backend/internal/config/config.go`、`backend/internal/middleware/auth.go` |
+| S3-M2 | FR-02 在 dev 环境被 `enableDev` 自动注入用户绕过，A13 隔离测试不可做 | dev 模式不再自动注入用户；`/api/v1/auth/dev-token` 成为唯一 token 来源；A13 依赖此裁决，否则交叉访问无法真实验证 | `backend/internal/middleware/auth.go`、`backend/internal/handlers/auth.go`、§6.1 FR-02 备注 |
+| S3-R1 | HNSW 召回只在合成数据验证，真实语料未知 | S4 验收增加"真实文档 HNSW vs 精确扫描 Recall@5 ≥ 0.95" | `docs/testing/spike-report.md`、§11.1 A2 |
+| S3-R2 | `ef_search=100` 为拍定值，无真实语料依据 | S4 扫描 `ef_search=40/100/200` 找召回/延迟拐点 | `docs/testing/spike-report.md`、§11.1 A2 |
+| S3-E1 | Bash PATH 缺少 make，且存在假包镜像风险 | 环境事实：make 使用绝对路径 `/c/Program Files (x86)/GnuWin32/bin/make.exe`；ai-service 依赖锁定官方 PyPI | `docs/00-planning/00-environment-and-plan.md` §1.8 |
 
 ### v1.7（2026-10-22 21:25）— S2 审查结论入 PRD（外部审查裁定，用户确认进入 S3）
 

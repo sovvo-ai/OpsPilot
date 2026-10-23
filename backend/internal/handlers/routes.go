@@ -5,14 +5,14 @@ import (
 )
 
 // RegisterAPIRoutes 注册全部业务路由（含健康端点）。
-func RegisterAPIRoutes(r *gin.Engine, health *HealthHandler) {
+func RegisterAPIRoutes(r *gin.Engine, health *HealthHandler, auth *AuthHandler) {
 	// 健康检查（免鉴权）
 	r.GET("/health/live", health.Live)
 	r.GET("/health/ready", health.Ready)
 	r.GET("/health/deps", health.Deps)
 
 	// 认证
-	r.POST("/api/v1/auth/dev-token", DevToken)
+	r.POST("/api/v1/auth/dev-token", auth.DevToken)
 
 	// 文档
 	r.POST("/api/v1/documents", UploadDocument)

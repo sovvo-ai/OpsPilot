@@ -46,12 +46,13 @@ func main() {
 	r.Use(gin.Recovery())
 	r.Use(middleware.RequestID())
 	r.Use(middleware.ErrorHandler())
-	r.Use(middleware.JWTAuth(cfg.JWTSecret, cfg.EnableDevAuth))
+	r.Use(middleware.JWTAuth(cfg.JWTSecret))
 	r.Use(middleware.InternalAuth(cfg.AIServiceToken))
 
 	version := handlers.ServiceVersion()
 	health := handlers.NewHealthHandler(database, version, "", cfg.AIServiceURL)
-	handlers.RegisterAPIRoutes(r, health)
+	auth := handlers.NewAuthHandler(cfg)
+	handlers.RegisterAPIRoutes(r, health, auth)
 
 	// 404 也走统一结构
 	r.NoRoute(func(c *gin.Context) {

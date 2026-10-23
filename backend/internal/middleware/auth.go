@@ -10,12 +10,9 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-const (
-	DevUserID = "dev-user-001"
-)
-
-// JWTAuth 验证 Bearer JWT；/health/* 豁免。
-func JWTAuth(secret string, enableDev bool) gin.HandlerFunc {
+// JWTAuth 验证 Bearer JWT；/health/* 与 /api/v1/auth/dev-token 豁免。
+// 空密钥下所有 token 视为无效（防御性兜底）。
+func JWTAuth(secret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if isHealthPath(c.Request.URL.Path) {
 			c.Next()
@@ -28,15 +25,20 @@ func JWTAuth(secret string, enableDev bool) gin.HandlerFunc {
 			return
 		}
 
-		tokenString := extractBearer(c.GetHeader("Authorization"))
-		if tokenString == "" && enableDev {
-			// dev 模式：无 token 时注入开发用户
-			c.Set("user_id", DevUserID)
+		// dev-token 是获取 JWT 的入口，本身不能要求 JWT
+		if c.Request.URL.Path == "/api/v1/auth/dev-token" {
 			c.Next()
 			return
 		}
+
+		tokenString := extractBearer(c.GetHeader("Authorization"))
 		if tokenString == "" {
 			AbortWithError(c, http.StatusUnauthorized, "UNAUTHORIZED", "缺少鉴权令牌")
+			return
+		}
+
+		if subtle.ConstantTimeCompare([]byte(secret), []byte("")) == 1 {
+			AbortWithError(c, http.StatusUnauthorized, "UNAUTHORIZED", "令牌无效或已过期")
 			return
 		}
 

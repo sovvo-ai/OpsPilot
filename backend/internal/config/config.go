@@ -33,13 +33,11 @@ func FromEnv() (*Config, error) {
 		EnableDevAuth:  getEnvBool("ENABLE_DEV_AUTH", true),
 	}
 
-	if cfg.AppEnv != "dev" {
-		if cfg.JWTSecret == "" {
-			return nil, fmt.Errorf("JWT_SECRET 未设置")
-		}
-		if cfg.AIServiceToken == "" {
-			return nil, fmt.Errorf("AI_SERVICE_TOKEN 未设置")
-		}
+	if cfg.JWTSecret == "" {
+		return nil, fmt.Errorf("JWT_SECRET 未设置")
+	}
+	if cfg.AIServiceToken == "" {
+		return nil, fmt.Errorf("AI_SERVICE_TOKEN 未设置")
 	}
 
 	return cfg, nil
