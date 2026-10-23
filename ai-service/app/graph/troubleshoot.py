@@ -33,24 +33,88 @@ PORT_HINT = re.compile(
 )
 
 _PORT_RE = re.compile(r"\b(\d{2,5})\b")
+_PID_RE = re.compile(r"\b(?:pid|PID|进程号|进程)\s*[:=]?\s*(\d{1,7})\b")
+_PROTO_RE = re.compile(r"\b(tcp|udp)\b", re.IGNORECASE)
+# 服务名：端口附近的标识符（字母开头、长度≥2，排除常见噪声词）
+_SERVICE_RE = re.compile(r"\b([a-zA-Z][a-zA-Z0-9_.-]{1,30})\b")
 
 
 def _extract_ports(text: str) -> list[dict[str, Any]]:
-    """从问句里提取端口，构造 check_port_conflict 的入参。
+    """从问句**逐行**提取端口占用信息，供 check_port_conflict 使用。
 
-    这是**启发式提取**：V1 只分析用户提供的模拟数据，不探测主机。
-    提取不到合法端口时给一个占位（工具会按范围校验）。
+    **S7-B 修正（关键）**：早期实现用 `seen: set[int]` 对端口去重，把
+    "8080 nginx" 与 "8080 java" 两行压成一条 `{8080,tcp}` → 工具按"无重复端口"
+    判定**无冲突**。而"两行同端口"恰恰是冲突的**定义来源** —— 这不是简化，
+    是给出**错误结论**（比不调用更糟）。
+
+    现改为逐行提取，同端口多行**保留多条**，并解析 `service` / `pid` / `protocol`。
     """
     ports: list[dict[str, Any]] = []
-    seen: set[int] = set()
-    for m in _PORT_RE.finditer(text):
-        p = int(m.group(1))
-        if 1 <= p <= 65535 and p not in seen:
-            seen.add(p)
-            ports.append({"port": p, "protocol": "tcp"})
-        if len(ports) >= 20:
-            break
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        # 先摘出 pid，并从待扫描文本里挖掉 —— 避免把 `pid=1234` 的 1234 当成端口
+        line_pid: int | None = None
+        dm = _PID_RE.search(line)
+        if dm:
+            line_pid = int(dm.group(1))
+        scan_text = _PID_RE.sub(" ", line)
+
+        # service 就近归属：把行按端口切段，每个端口只在其**后随片段**里找 service
+        # （"nginx 监听 8080" 的 nginx 在端口前，"8080 nginx" 在后，两者都要能取到）
+        port_matches = list(_PORT_RE.finditer(scan_text))
+        for mi, m in enumerate(port_matches):
+            p = int(m.group(1))
+            if not (1 <= p <= 65535):
+                continue
+            item: dict[str, Any] = {"port": p, "protocol": "tcp"}
+
+            # protocol：行内显式声明优先
+            pm = _PROTO_RE.search(line)
+            if pm:
+                item["protocol"] = pm.group(1).lower()
+
+            if line_pid is not None:
+                item["pid"] = line_pid
+
+            # service 就近：优先取本端口后随片段，其次取前导片段
+            after_start = m.end()
+            after_end = port_matches[mi + 1].start() if mi + 1 < len(port_matches) else len(scan_text)
+            before_start = port_matches[mi - 1].end() if mi > 0 else 0
+            candidates = [scan_text[after_start:after_end], scan_text[before_start:m.start()]]
+            for seg in candidates:
+                seg = _PROTO_RE.sub(" ", seg)
+                found = False
+                for sm in _SERVICE_RE.finditer(seg):
+                    word = sm.group(1)
+                    if _is_noise_word(word):
+                        continue
+                    item["service"] = word
+                    found = True
+                    break
+                if found:
+                    break
+
+            ports.append(item)
+            if len(ports) >= 20:
+                return ports
+
+    # 兜底：整段文本里一个合法端口都没有时，给占位（工具会按范围校验）
     return ports or [{"port": 8080, "protocol": "tcp"}]
+
+
+# 噪声词：这些词出现在端口附近时不应被当作 service 名
+_NOISE_WORDS = {
+    "port", "ports", "tcp", "udp", "pid", "listen", "listening", "used", "use",
+    "already", "in", "the", "and", "or", "address", "conflict", "occupied",
+    "端口", "占用", "冲突", "监听", "进程", "服务", "起不来", "不通",
+}
+
+
+def _is_noise_word(word: str) -> bool:
+    return word.lower() in _NOISE_WORDS or len(word) < 2
 
 
 def _as_record(out: dict[str, Any]) -> dict[str, Any]:
@@ -80,11 +144,17 @@ def _summarize_tool(out: dict[str, Any]) -> str:
 
 
 def has_log_signal(state: dict) -> bool:
-    """是否含日志/错误线索（决定 troubleshoot 是否执行）。"""
+    """是否含**需要进入 troubleshoot 节点**的线索。
+
+    **S7-B 连带修正**：早期只认日志特征（`LOG_HINT`），导致"端口冲突"这类
+    纯端口问句虽被判 troubleshooting，却在条件边被拦下、直连 evidence ——
+    `check_port_conflict` 永远不会被调用（工具白装了）。
+    现把端口线索（`PORT_HINT`）也计入。
+    """
     if state.get("attach_log"):
         return True
     q = state.get("question", "")
-    return bool(LOG_HINT.search(q))
+    return bool(LOG_HINT.search(q) or PORT_HINT.search(q))
 
 
 def troubleshoot_node(

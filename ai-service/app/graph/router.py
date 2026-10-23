@@ -49,7 +49,12 @@ TS_ERROR_WORDS = (
     "报错", "异常", "堆栈", "崩溃", "起不来", "启动失败", "挂了",
 )
 TS_ERROR_CODE = re.compile(r"\b(1[0-9]{4}|[45][0-9]{2}|1[34][0-9]|E[0-9]{4,5})\b")
-TS_PORT_HINT = re.compile(r"(端口|port).{0,12}(起不来|不通|占用|被占|没监听|listen)")
+TS_PORT_HINT = re.compile(
+    r"((端口|port).{0,16}(起不来|不通|占用|被占|冲突|没监听|listen|already in use))"
+    r"|((占用|被占|冲突|already in use).{0,16}(端口|port))"
+    r"|(\b\d{2,5}\b.{0,20}(端口冲突|端口被占|被占用))",
+    re.IGNORECASE,
+)
 
 
 def _matches(patterns: tuple[str, ...], text: str) -> bool:
@@ -63,9 +68,60 @@ def _starts_with_any(text: str) -> bool:
     return any(low.startswith(p) for p in SMALLTALK_PREFIXES)
 
 
-def rule_route(question: str) -> str | None:
-    """规则层判定。命中返回 route，不确定返回 None。"""
+# 日志错误特征（S7-A）：与 troubleshoot 的判据保持一致，避免"router 不认、troubleshoot 认"
+# 注意两个易错点（实测踩过）：
+#   1. `E[A-Z]{3,}`（errno 名）**必须大小写敏感** —— 否则 `sERVER` 这类普通单词
+#      会被 IGNORECASE 匹配，把正常日志judged成错误日志。
+#   2. 中文否定语境（"无异常"/"未报错"/"没有失败"）不应算错误特征。
+_ERRNO_RE = re.compile(r"\bE[A-Z]{3,}\b")          # 大小写敏感
+_LOOSE_ERROR_RE = re.compile(
+    r"(traceback|exception|critical|\bfatal\b|panic|"
+    r"\berror\b|\bfailed\b|\bfailure\b|"
+    r"\b[45]\d{2}\b)",
+    re.IGNORECASE,
+)
+_CN_ERROR_RE = re.compile(r"(?<!无)(?<!未)(?<!没)(?<!没有)(错误|异常|失败|报错|堆栈|崩溃|拒绝)")
+
+
+def _log_has_error_signal(log_text: str) -> bool:
+    """附带的日志文本是否含**错误**特征（S7-A）。
+
+    判据要收窄到"错误"而非"任何日志" —— 一段正常的 INFO 日志不该被路由到
+    troubleshooting（否则"帮我看看这段日志"配正常日志会误导入口）。
+    """
+    if not log_text or not log_text.strip():
+        return False
+    return bool(
+        _LOOSE_ERROR_RE.search(log_text)
+        or _ERRNO_RE.search(log_text)
+        or _CN_ERROR_RE.search(log_text)
+    )
+
+
+def rule_route(question: str, attach_log: str | None = None) -> str | None:
+    """规则层判定。命中返回 route，不确定返回 None。
+
+    **S7-A 修正**：判定必须**先看 `attach_log`** —— PRD §2.2-S2 的招牌场景是
+    "粘一段日志问『这是什么问题』"，此时问句本身往往不含任何错误特征
+    （"帮我看看这段日志"），早期实现只吃 `question`，导致该场景被判 kb_qa
+    最终拒答（真实链路上是坏的）。
+
+    判定顺序（命中即短路，**顺序即优先级**）：
+      0. **附了日志且日志含错误特征 → troubleshooting**（最高优先，招牌场景）
+      1. 输入非法（Go 侧已拦）
+      2. smalltalk 前缀命中
+      3. out_of_scope 强命中
+      4. troubleshooting 特征（问句含堆栈/error/错误码/端口线索）
+      5. 其余 → kb_qa
+    """
     q = question.strip()
+    if not q and not attach_log:
+        return None
+
+    # 0. 附日志 + 日志含错误特征 → 最高优先走 troubleshooting（S7-A）
+    if attach_log and _log_has_error_signal(attach_log):
+        return "troubleshooting"
+
     if not q:
         return None
 
@@ -77,7 +133,7 @@ def rule_route(question: str) -> str | None:
     if _matches(OUT_OF_SCOPE_PATTERNS, q):
         return "out_of_scope"
 
-    # 4. troubleshooting 特征
+    # 4. troubleshooting 特征：问句含堆栈/error/错误码/端口冲突线索
     low = q.lower()
     if any(w in low for w in TS_ERROR_WORDS):
         return "troubleshooting"
@@ -99,8 +155,10 @@ def router_node(state: dict, *, budget: Budget, llm_call=None, record_step=None)
 
     t0 = time.monotonic()
     question = state.get("question", "")
+    attach_log = state.get("attach_log")
 
-    route = rule_route(question)
+    # S7-A：消费 attach_log（附日志提问是 PRD §2.2-S2 的招牌场景）
+    route = rule_route(question, attach_log)
     conf = 1.0
     llm_calls_delta = 0
 

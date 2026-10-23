@@ -5,9 +5,10 @@
 | 日期 | 2026-10-23 15:10 – 16:0x（GMT+8） |
 | 执行人 | 开发侧（AI 辅助） |
 | 依据 | `docs/prd/PRD.md` §11.1（A5/A6/A8）、`docs/architecture/agent-workflow.md`（§1/§2/§3/§4/§5/§7/§8）、`docs/testing/rag-eval-spec.md` §3.1 |
-| 结论 | **S6 通过**：5/5 自动项全绿；R5（LangGraph 签名）关闭 |
+| 结论 | **S6 已关账（2026-10-23）**：6/6 自动项全绿（含 B2 稳定性专项），并经外部审查 B1–B3 修复后复验通过 |
 | 变更性质 | **替换 S5 线性直链为 LangGraph 全图**，契约与 Go 侧零改动 |
 | 执行方式 | `docker compose build` → `up -d` → 宿主机运行真实 HTTP + 真实 DB 的验收脚本 |
+| 关账记录 | 审查 B1–B3 修复提交 `df09db3`；外部复验通过后 S6 关账（此前挂"未关账"等复验） |
 
 > **脱敏声明**：`DASHSCOPE_API_KEY`、`AI_SERVICE_TOKEN`、`JWT_SECRET`、`POSTGRES_PASSWORD` 一律从 `deploy/.env` 读取并打码，从未打印。
 

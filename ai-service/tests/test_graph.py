@@ -520,6 +520,171 @@ class TestToolWiring:
 
 
 # ---------------------------------------------------------------------------
+# S7-A：router 消费 attach_log（招牌场景）
+# ---------------------------------------------------------------------------
+
+
+class TestRouterConsumesAttachLog:
+    """S7-A 回归：附日志提问必须走 troubleshooting。
+
+    真实缺陷：PRD §2.2-S2 的招牌场景"粘一段日志问『这是什么问题』"，问句本身
+    不含错误特征（"帮我看看这段日志"），早期 router 只吃 question → 判 kb_qa
+    → 最终拒答。**真实链路上这个场景是坏的。**
+    """
+
+    ERROR_LOG = (
+        "2026-10-23 10:00:01 ERROR dial tcp 10.0.0.1:3306: connect: connection refused\n"
+        "2026-10-23 10:00:02 ERROR failed to connect to mysql: connection refused"
+    )
+
+    @pytest.mark.parametrize(
+        "question",
+        ["帮我看看这段日志", "这段日志是什么问题", "日志如下，帮我分析", "这是什么问题"],
+    )
+    def test_attach_log_routes_to_troubleshooting(self, monkeypatch, question):
+        patch_cfg(monkeypatch)
+        r = run(question, llm_call=CountingLLM(), retrieve_fn=lambda o, q, c: CHUNKS,
+                attach_log=self.ERROR_LOG)
+        assert r["route"] == "troubleshooting", (
+            f"{question!r} + 错误日志应为 troubleshooting，实际 {r['route']}"
+        )
+        assert "troubleshoot" in r["node_path"]
+
+    def test_direct_rule_layer_consumes_attach_log(self):
+        """规则层直测（不经过图）：attach_log 参与判定。"""
+        from app.graph.router import rule_route
+
+        assert rule_route("帮我看看这段日志", self.ERROR_LOG) == "troubleshooting"
+        assert rule_route("帮我看看这段日志", None) == "kb_qa"
+
+    def test_normal_info_log_not_misrouted(self):
+        """正常 INFO 日志不得被误判为故障排查。"""
+        from app.graph.router import rule_route
+
+        normal = "2026-10-23 10:00:01 INFO request completed in 12ms\n2026-10-23 10:00:02 INFO ok"
+        assert rule_route("帮我看看这段日志", normal) == "kb_qa"
+
+    @pytest.mark.parametrize(
+        "log_text,expected",
+        [
+            ("Traceback (most recent call last):", "troubleshooting"),
+            ("2026-01-01 10:00:00 FATAL cannot start", "troubleshooting"),
+            ("nginx: [error] upstream closed", "troubleshooting"),
+            ("数据库连接错误，请检查", "troubleshooting"),
+            ("dial tcp: ECONNREFUSED", "troubleshooting"),
+            ("service started successfully", "kb_qa"),
+            ("所有测试通过，无异常", "kb_qa"),
+            ("正常完成，没有失败", "kb_qa"),
+            ("服务未报错", "kb_qa"),
+        ],
+    )
+    def test_error_signal_detection(self, log_text, expected):
+        """错误特征判定（含否定语境、errno 大小写）。"""
+        from app.graph.router import rule_route
+
+        assert rule_route("帮我看看", log_text) == expected
+
+    def test_attach_log_scenario_end_to_end_answered(self, monkeypatch):
+        """招牌场景端到端：附日志 + 模糊问句 → answered（不再拒答）。"""
+        patch_cfg(monkeypatch)
+        r = run("帮我看看这段日志", llm_call=CountingLLM(), retrieve_fn=lambda o, q, c: CHUNKS,
+                attach_log=self.ERROR_LOG)
+        assert r["answer_type"] == "answered", f"招牌场景被判 {r['answer_type']}"
+        assert r["citations"]
+
+
+# ---------------------------------------------------------------------------
+# S7-B：端口提取保留同端口多条
+# ---------------------------------------------------------------------------
+
+
+class TestPortExtraction:
+    """S7-B 回归：同端口多行必须保留多条（冲突的定义来源）。
+
+    真实缺陷：早期 `_extract_ports` 用 `seen: set[int]` 去重，把"8080 nginx"与
+    "8080 java"压成一条 → 工具判"无重复端口"→ **自信回答"未发现占用冲突"**。
+    这不是简化，是给出错误结论（比不调用更糟）。
+    """
+
+    def test_two_lines_same_port_reports_conflict(self):
+        from app.graph.troubleshoot import _extract_ports
+        from app.tools.check_port_conflict import check_port_conflict
+
+        text = "8080 nginx 正在监听\n8080 java 也在用"
+        ports = _extract_ports(text)
+        assert len(ports) == 2, f"同端口两行应保留 2 条，实际 {ports}"
+        assert {p["service"] for p in ports} == {"nginx", "java"}
+        out = check_port_conflict({"ports": ports})
+        assert len(out["conflicts"]) == 1, f"应报冲突，实际 {out['summary']}"
+
+    def test_single_line_two_ports_reports_conflict(self):
+        from app.graph.troubleshoot import _extract_ports
+        from app.tools.check_port_conflict import check_port_conflict
+
+        ports = _extract_ports("nginx 监听 8080，java 也占用 8080")
+        out = check_port_conflict({"ports": ports})
+        assert len(out["conflicts"]) == 1
+
+    def test_same_port_different_protocol_no_conflict(self):
+        from app.graph.troubleshoot import _extract_ports
+        from app.tools.check_port_conflict import check_port_conflict
+
+        ports = _extract_ports("53/udp dns\n53/tcp dns")
+        assert [p["protocol"] for p in ports] == ["udp", "tcp"]
+        out = check_port_conflict({"ports": ports})
+        assert out["conflicts"] == [], "同端口不同协议不应算冲突"
+
+    def test_single_port_no_conflict(self):
+        from app.graph.troubleshoot import _extract_ports
+        from app.tools.check_port_conflict import check_port_conflict
+
+        ports = _extract_ports("8080 nginx")
+        out = check_port_conflict({"ports": ports})
+        assert out["conflicts"] == []
+
+    def test_pid_extracted(self):
+        from app.graph.troubleshoot import _extract_ports
+
+        ports = _extract_ports("8080 java pid=1234")
+        assert ports[0].get("pid") == 1234
+
+    def test_pid_number_not_treated_as_port(self):
+        """`pid=1234` 的 1234 不得被当成端口。"""
+        from app.graph.troubleshoot import _extract_ports
+
+        ports = _extract_ports("8080 java pid=1234")
+        assert [p["port"] for p in ports] == [8080]
+
+    def test_no_port_falls_back_to_placeholder(self):
+        from app.graph.troubleshoot import _extract_ports
+
+        assert _extract_ports("服务起不来") == [{"port": 8080, "protocol": "tcp"}]
+
+    def test_troubleshoot_node_reports_real_conflict(self, monkeypatch):
+        """节点级：端口冲突问句 → 工具证据里出现真实冲突（非"未发现"）。"""
+        patch_cfg(monkeypatch)
+        from app.tools import ToolExecutor
+
+        ex = ToolExecutor()
+        seen: dict[str, str] = {}
+
+        def llm(role, prompt):
+            if role == "troubleshoot":
+                seen["prompt"] = prompt
+            return "端口被占用[1]"
+
+        run(
+            "8080 nginx 正在监听\n8080 java 也在用，是不是端口冲突？",
+            llm_call=llm,
+            tool_executor=ex,
+            retrieve_fn=lambda o, q, c: CHUNKS,
+        )
+        names = [c["tool_name"] for c in ex.calls]
+        assert "check_port_conflict" in names, f"未调用端口工具：{names}"
+        assert "发现 1 处冲突" in seen.get("prompt", ""), "工具证据里没有报出冲突"
+
+
+# ---------------------------------------------------------------------------
 # 预算（A6）
 # ---------------------------------------------------------------------------
 

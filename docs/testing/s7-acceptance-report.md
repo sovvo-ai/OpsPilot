@@ -29,8 +29,10 @@
 | 审计只存摘要 | 无原始入参 | **args_digest 格式正确，无敏感原文** | **通过** |
 | CI 静态禁令 | 命中即失败 | **注入 subprocess 后退出码=1** | **通过** |
 | 端到端工具接线 | tool_calls 行 + answered + FR-18 三类 | **全部满足** | **通过** |
+| **S7-A** 附日志路由 | 招牌场景不拒答 | **route=troubleshooting → answered** | **通过** |
+| **S7-B** 端口冲突提取 | 同端口多行报冲突 | **"发现 1 处冲突"** | **通过** |
 
-质量门禁：`go vet` 干净、`go test ./...` 全绿；`pytest` **158 passed**（S6 时 93 → 新增 65）。
+质量门禁：`go vet` 干净、`go test ./...` 全绿；`pytest` **182 passed**（S6 时 93 → 新增 89）。
 
 ---
 
@@ -170,7 +172,40 @@ node_path   = ['router', 'retrieval', 'troubleshoot', 'evidence', 'final']
 | 现象 | `run_turn` 的 `tool_executor` 默认 None，`internal.py` 从未注入 → troubleshoot 的 `if tool_executor is not None` 恒假，**工具从未被调用** |
 | 修复 | `run_turn` 默认注入 `ToolExecutor()`；troubleshoot 接入两个真工具 |
 
-### 5.2 工具证据被丢弃（新发现）
+### 5.2 S7-A：Router 不看 `attach_log` —— 招牌场景直接拒答
+
+| 项 | 内容 |
+|---|---|
+| 现象 | 附一段 `connection refused` 日志 + 问"帮我看看这段日志" → `route=kb_qa` → **refusal**。PRD §2.2-S2 的招牌场景（粘日志问"这是什么问题"）在真实链路上是坏的 |
+| 根因 | `rule_route` 只吃 `question`；`attach_log` 进了 state 但**没有任何人看它**。而招牌场景的问句本身不含错误特征（"帮我看看这段日志"），规则层无从判断 |
+| 修复 | 规则层**第一条**消费 `attach_log`：非空且含错误特征 → `troubleshooting`。判据收窄为"错误"而非"任何日志"，并处理两个易错点：① `E[A-Z]{3,}`（errno）必须**大小写敏感**（否则 `sERVER` 被 IGNORECASE 匹配成错误词）；② 中文否定语境（"无异常"/"未报错"/"没有失败"）不算错误 |
+| 回归 | `test_graph.py::TestRouterConsumesAttachLog`（含 9 条错误特征抽查 + 5 条否定语境 + 招牌场景端到端 answered） |
+
+**修复前后实测对比**：
+
+| | 修复前 | 修复后 |
+|---|---|---|
+| "帮我看看这段日志" + 错误日志 | `route=kb_qa` → `refusal` | `route=troubleshooting` → **answered**，`tool_calls=['analyze_error_log']` |
+
+### 5.3 S7-B：端口提取去重 → 永远报不出冲突
+
+| 项 | 内容 |
+|---|---|
+| 现象 | "8080 nginx" 与 "8080 java" 两行被压成一条 `{8080,tcp}` → 工具按"无重复端口"判**"未发现占用冲突"**。两进程抢 8080 的标准冲突场景，系统自信给出**错误结论** |
+| 性质 | **不是"V1 简化"，是错误结论 —— 比不调用工具更糟**（用户会据此误判"没有冲突"） |
+| 根因 | `_extract_ports` 用 `seen: set[int]` 对端口去重。而**"同端口多行"恰恰是冲突的定义来源** |
+| 修复 | 改为**逐行提取** `{port, protocol, service?, pid?}`，同端口多行**保留多条**；解析 `service`（就近归属）/`pid`（并排除 `pid=1234` 的 1234 被当端口） |
+| 连带修复 | `has_log_signal` 原先只认日志特征 → 纯端口问句虽判 troubleshooting，却在**条件边被拦下直连 evidence**，`check_port_conflict` 永远不会被调用（工具白装）。现把 `PORT_HINT` 计入 |
+| 回归 | `test_graph.py::TestPortExtraction`（8 例，含"同端口不同协议不算冲突"边界） |
+
+**修复前后实测对比**：
+
+| 输入 | 修复前 | 修复后 |
+|---|---|---|
+| `8080 nginx` + `8080 java` | 提取 1 条 → "**未发现冲突**" | 提取 2 条 → "**发现 1 处冲突**" |
+| 真实链路回答 | "未发现占用冲突" | "**工具检测已发现 1 处端口冲突[工具]**" |
+
+### 5.4 工具证据被丢弃（新发现）
 
 | 项 | 内容 |
 |---|---|
@@ -181,7 +216,7 @@ node_path   = ['router', 'retrieval', 'troubleshoot', 'evidence', 'final']
 
 > 这个缺陷的教训：**"工具被调用了" ≠ "工具结果被用上了"**。只断言 tool_calls 有行会漏掉它。
 
-### 5.3 CI 假闸门
+### 5.5 CI 假闸门
 
 `ci.sh` 原写法 `grep ... || true` —— 命中后仍返回 0，**永不失败**。已改为 `exit 1` 真闸门。
 
@@ -215,19 +250,20 @@ cd ai-service && pytest -q
 
 ## 7. 结论
 
-**S7 工具层通过验收。**
+**S7 工具层通过验收（含审查 S7-A/S7-B 修复）。**
 
 - `app/tools/` 三纯函数按 tool-policy 落地，`TOOL_REGISTRY` 常量封闭。
 - **S6 的空壳已修**：troubleshoot 接真工具，`tool_calls` 真实落库。
 - **A7 硬账已还**：注入用例从"文档表格"落成 61 例真实测试（`tests/unit/` + `tests/integration/`）。
 - 端到端验证：贴 CrashLoopBackOff 日志 → `tool_calls` 行 + `answered` + FR-18 三类证据标注齐全。
 - CI 静态禁令为**真闸门**（已证明会拦），且修正了 `re.compile` 假阳性。
+- **审查 S7-A / S7-B 已修**：PRD §2.2-S2 招牌场景（附日志提问）不再拒答；端口冲突不再被去重逻辑吃掉。
 
 ### 遗留（诚实记录）
 
 | 项 | 状态 |
 |---|---|
-| `check_port_conflict` 的端口提取 | 启发式正则从问句提取，非结构化输入；V1 定位如此（只分析用户提供的模拟数据） |
-| `search_knowledge_base` 作为图的工具 | 已实现并测试，但 troubleshoot 节点当前**未自动调用**它（主链路已有 retrieval，重复调用无增益）；留待 V1.1 按需接入 |
+| `check_port_conflict` 的端口提取 | **S7-B 已修**：改为逐行提取、同端口保留多条、解析 service/pid（详见 §5.5）。剩余局限：单行内多端口时 service 归属为启发式就近匹配（冲突判定不受影响） |
+| `search_knowledge_base` 不接入 troubleshoot | **按计划书 §6.2 设计如此，非欠账**。§6.2 为 Troubleshooting 声明的可调工具就是 `analyze_error_log` / `check_port_conflict` 两个（主链路 retrieval 已在前，工具内再查 KB 是纯冗余）。注册表内有它、测试全过，S9/V2 引入 function-calling 时自然有用武之地 |
 | P1 静态检查的完备性 | 词边界正则 + 单测防线；无法覆盖 `getattr(__builtins__, "ev"+"al")` 这类刻意绕过（V1 无此场景） |
 | A2 Recall@5 / A10 异常 / A13 交叉轨迹 | **NOT RUN**（属后续轮次） |
