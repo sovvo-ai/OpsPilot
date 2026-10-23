@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from app.chat import ChatError, run_turn
 from app.ingest import IngestError, ingest_document
 from app.middleware import make_error_body
 
@@ -89,11 +90,37 @@ async def delete_vectors(doc_id: str, request: Request) -> JSONResponse:
 
 @router.post("/internal/v1/chat")
 async def chat(request: Request) -> JSONResponse:
+    """Go 调用 Python 编排的入口：非流式执行一轮问答（S5 单节点直链）。
+
+    业务失败（模型不可用等）用 200 + 结构化结果表达（TurnResult）；
+    5xx 仅用于不可预期的内部错误。
+    """
     rid = getattr(request.state, "request_id", None)
-    return JSONResponse(
-        status_code=501,
-        content=make_error_body("NOT_IMPLEMENTED", "chat 尚未实现", rid),
-    )
+    try:
+        body = await request.json()
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse(
+            status_code=400,
+            content=make_error_body("INVALID_REQUEST", f"请求体解析失败: {exc}", rid),
+        )
+
+    # request_id 以中间件透传的为准，保证跨服务串联
+    if rid:
+        body["request_id"] = rid
+
+    try:
+        result = run_turn(body)
+        return JSONResponse(status_code=200, content=result)
+    except ChatError as exc:
+        return JSONResponse(
+            status_code=422,
+            content=make_error_body(exc.code, exc.message, rid),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse(
+            status_code=500,
+            content=make_error_body("INTERNAL_ERROR", str(exc), rid),
+        )
 
 
 @router.post("/internal/v1/chat/stream")
@@ -101,5 +128,5 @@ async def chat_stream(request: Request) -> JSONResponse:
     rid = getattr(request.state, "request_id", None)
     return JSONResponse(
         status_code=501,
-        content=make_error_body("NOT_IMPLEMENTED", "chat stream 尚未实现", rid),
+        content=make_error_body("NOT_IMPLEMENTED", "chat stream 尚未实现（S7）", rid),
     )

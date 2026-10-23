@@ -24,4 +24,11 @@ def get_config() -> dict:
         "llm_model_final": os.getenv("LLM_MODEL_FINAL", "qwen-plus"),
         "embedding_model": os.getenv("EMBEDDING_MODEL", "text-embedding-v4"),
         "embedding_dim": int(os.getenv("EMBEDDING_DIM", "1024")),
+        # 检索参数（FR-14/15/16）
+        "retrieval_top_k": int(os.getenv("RETRIEVAL_TOP_K", "5")),
+        "retrieval_min_score": float(os.getenv("RETRIEVAL_MIN_SCORE", "0.35")),
+        "hnsw_ef_search": int(os.getenv("HNSW_EF_SEARCH", "100")),
+        # 生成参数
+        "llm_timeout_seconds": float(os.getenv("LLM_TIMEOUT_SECONDS", "30")),
+        "answer_max_tokens": int(os.getenv("ANSWER_MAX_TOKENS", "1024")),
     }

@@ -15,3 +15,13 @@ func WithDB(db *sql.DB) gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// WithOrchestrator 将 AI 编排客户端注入 gin 上下文；为 nil 时不注入。
+func WithOrchestrator(orch any) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if orch != nil {
+			c.Set("orchestrator", orch)
+		}
+		c.Next()
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"opspilot/backend/internal/chat"
 	"opspilot/backend/internal/config"
 	"opspilot/backend/internal/db"
 	"opspilot/backend/internal/handlers"
@@ -50,6 +51,9 @@ func main() {
 	if database != nil {
 		r.Use(middleware.WithDB(database.DB))
 	}
+	// S5：编排客户端（Jan 侧调 ai-service /internal/v1/chat）
+	orch := chat.NewOrchestrator(cfg.AIServiceURL, cfg.AIServiceToken)
+	r.Use(middleware.WithOrchestrator(orch))
 	r.Use(middleware.JWTAuth(cfg.JWTSecret))
 	r.Use(middleware.InternalAuth(cfg.AIServiceToken))
 
