@@ -33,6 +33,22 @@ type TurnResult struct {
 	TerminatedReason string         `json:"terminated_reason"`
 	Usage            map[string]int `json:"usage"`
 	DurationMS       int            `json:"duration_ms"`
+	// --- S6 轨迹（Go 落 run_steps）---
+	NodePath []string   `json:"node_path"`
+	Steps    []StepInfo `json:"steps"`
+	// --- 检索统计（可选）---
+	RetrievalTopScore float64 `json:"retrieval_top_score"`
+	RetrievedCount    int     `json:"retrieved_count"`
+	RewrittenQuery    *string `json:"rewritten_query"`
+}
+
+// StepInfo 是单节点轨迹（对齐 run_steps 表）。
+type StepInfo struct {
+	Node          string `json:"node"`
+	DurationMS    int    `json:"duration_ms"`
+	InputDigest   string `json:"input_digest"`
+	OutputSummary string `json:"output_summary"`
+	Degraded      bool   `json:"degraded"`
 }
 
 // Orchestrator 负责调用 ai-service 的编排接口。

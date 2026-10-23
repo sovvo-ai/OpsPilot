@@ -7,7 +7,8 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from app.chat import ChatError, run_turn
+from app.chat import ChatError
+from app.graph import run_turn
 from app.ingest import IngestError, ingest_document
 from app.middleware import make_error_body
 
@@ -90,9 +91,10 @@ async def delete_vectors(doc_id: str, request: Request) -> JSONResponse:
 
 @router.post("/internal/v1/chat")
 async def chat(request: Request) -> JSONResponse:
-    """Go 调用 Python 编排的入口：非流式执行一轮问答（S5 单节点直链）。
+    """Go 调用 Python 编排的入口：非流式执行一轮问答。
 
-    业务失败（模型不可用等）用 200 + 结构化结果表达（TurnResult）；
+    S6 起走 **LangGraph 全图**（`app.graph.run_turn`），与流式接口共用同一入口
+    （agent-workflow §8）。业务失败用 200 + 结构化结果表达（TurnResult）；
     5xx 仅用于不可预期的内部错误。
     """
     rid = getattr(request.state, "request_id", None)

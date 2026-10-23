@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 // HTTPError 直接映射为 HTTP 4xx。
@@ -192,9 +194,33 @@ func InsertMessage(db *sql.DB, sessionID, role, content, citationsJSON string, d
 	return id, err
 }
 
-// InsertAssistantWithRun 写入助手消息并关联 run_id，同时落 agent_runs。
+// RunTrace 是一轮完整轨迹（写 agent_runs + run_steps + tool_calls）。
+type RunTrace struct {
+	RunID            string
+	SessionID        string
+	MessageID        string
+	OwnerID          string
+	RequestID        string
+	Route            string
+	NodePath         []string
+	Steps            []StepInfo
+	LLMCalls         int
+	ToolCalls        int
+	PromptTokens     int
+	CompletionTokens int
+	Degraded         bool
+	DegradeReasons   []string
+	Preempted        []string
+	TerminatedReason string
+	DurationMS       int
+}
+
+// InsertAssistantWithRun 写入助手消息并落完整轨迹（agent_runs + run_steps）。
+//
+// 「任一 run 可还原节点顺序、耗时、模型调用、工具调用」由 agent_runs.node_path +
+// run_steps（每节点一行，含 duration_ms）保证（A8 / R-1）。
 func InsertAssistantWithRun(
-	db *sql.DB, sessionID, ownerID, content, citationsJSON string, degraded bool, runID string,
+	db *sql.DB, trace RunTrace, content, citationsJSON string,
 ) (messageID string, err error) {
 	tx, err := db.Begin()
 	if err != nil {
@@ -205,24 +231,112 @@ func InsertAssistantWithRun(
 	err = tx.QueryRow(
 		`INSERT INTO messages (session_id, role, content, citations, degraded, run_id)
 		 VALUES ($1, 'assistant', $2, $3::jsonb, $4, $5) RETURNING id`,
-		sessionID, content, citationsJSON, degraded, runID,
+		trace.SessionID, content, citationsJSON, trace.Degraded, trace.RunID,
 	).Scan(&messageID)
 	if err != nil {
 		return "", err
 	}
+	trace.MessageID = messageID
 
 	if _, err = tx.Exec(
-		`INSERT INTO agent_runs (id, session_id, message_id, owner_id, route)
-		 VALUES ($1, $2, $3, $4, 'kb_qa')`,
-		runID, sessionID, messageID, ownerID,
+		`INSERT INTO agent_runs (
+		     id, session_id, message_id, owner_id, route,
+		     llm_calls, tool_calls, prompt_tokens, completion_tokens,
+		     degraded, degrade_reasons, terminated_reason, node_path, preempted, duration_ms
+		 ) VALUES ($1,$2,$3,$4,$5, $6,$7,$8,$9, $10,$11,$12,$13,$14,$15)`,
+		trace.RunID, trace.SessionID, trace.MessageID, trace.OwnerID, trace.Route,
+		trace.LLMCalls, trace.ToolCalls, trace.PromptTokens, trace.CompletionTokens,
+		trace.Degraded, pq.Array(trace.DegradeReasons), trace.TerminatedReason,
+		pq.Array(trace.NodePath), pq.Array(trace.Preempted), trace.DurationMS,
 	); err != nil {
 		return "", err
+	}
+
+	// run_steps：每节点一行（step_index 从 0 起）
+	for i, s := range trace.Steps {
+		if _, err = tx.Exec(
+			`INSERT INTO run_steps (run_id, step_index, node, duration_ms,
+			                        input_digest, output_summary, degraded)
+			 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+			trace.RunID, i, s.Node, s.DurationMS,
+			s.InputDigest, s.OutputSummary, s.Degraded,
+		); err != nil {
+			return "", err
+		}
 	}
 
 	if err = tx.Commit(); err != nil {
 		return "", err
 	}
 	return messageID, nil
+}
+
+// GetRun 读取轨迹（A8：节点顺序 + 耗时 + 调用数）。
+func GetRun(db *sql.DB, ownerID, runID string) (map[string]any, error) {
+	var (
+		route, terminatedReason             string
+		nodePath, degradeReasons, preempted []string
+		llmCalls, toolCalls, durationMS     int
+		degraded                            bool
+		createdAt                           time.Time
+	)
+	err := db.QueryRow(
+		`SELECT route, llm_calls, tool_calls, degraded, degrade_reasons,
+		        terminated_reason, node_path, preempted, duration_ms, created_at
+		   FROM agent_runs WHERE id = $1 AND owner_id = $2`,
+		runID, ownerID,
+	).Scan(&route, &llmCalls, &toolCalls, &degraded, pq.Array(&degradeReasons),
+		&terminatedReason, pq.Array(&nodePath), pq.Array(&preempted), &durationMS, &createdAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, &HTTPError{Status: http.StatusNotFound, Code: "NOT_FOUND", Msg: "轨迹不存在"}
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := db.Query(
+		`SELECT step_index, node, duration_ms, input_digest, output_summary, degraded
+		   FROM run_steps WHERE run_id = $1 ORDER BY step_index`, runID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var steps []map[string]any
+	for rows.Next() {
+		var (
+			idx, dur       int
+			node, inDigest string
+			outSummary     sql.NullString
+			stepDegraded   bool
+		)
+		if err := rows.Scan(&idx, &node, &dur, &inDigest, &outSummary, &stepDegraded); err != nil {
+			return nil, err
+		}
+		steps = append(steps, map[string]any{
+			"step_index":     idx,
+			"node":           node,
+			"duration_ms":    dur,
+			"input_digest":   inDigest,
+			"output_summary": outSummary.String,
+			"degraded":       stepDegraded,
+		})
+	}
+
+	return map[string]any{
+		"run_id":            runID,
+		"route":             route,
+		"llm_calls":         llmCalls,
+		"tool_calls":        toolCalls,
+		"degraded":          degraded,
+		"degrade_reasons":   degradeReasons,
+		"terminated_reason": terminatedReason,
+		"node_path":         nodePath,
+		"preempted":         preempted,
+		"duration_ms":       durationMS,
+		"created_at":        createdAt,
+		"steps":             steps,
+	}, nil
 }
 
 // TouchSession 刷新会话 updated_at（用于排序活跃度）。

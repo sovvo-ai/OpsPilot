@@ -1,4 +1,4 @@
-# AI Service 运行时与测试依赖（S3 骨架阶段）
+# AI Service 运行时与测试依赖
 # 版本锁定自官方 PyPI，避免使用被篡改的高版本包。
 fastapi==0.115.5
 uvicorn==0.32.1
@@ -6,3 +6,6 @@ pydantic==2.9.2
 httpx==0.27.2
 psycopg[binary]==3.2.3
 pytest==8.3.3
+# S6：LangGraph 全图编排（agent-workflow §1/§8）
+# 注意：会传递引入 langchain-core / langsmith / httpx2 等，vendor 需连依赖一起下载。
+langgraph==1.2.16

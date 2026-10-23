@@ -1,24 +1,23 @@
-"""S5 chat 编排的单元测试（纯逻辑，不依赖 DB/网络）。
+"""chat 模块的纯工具函数单测（不依赖 DB/网络）。
 
 覆盖：
 - 引用提取：只保留属于本次检索集的 `[n]`，编造编号被剔除（FR-22）
 - 引用校验：chunk_id 不在检索集 → 剔除
 - prompt 组装：片段编号与历史拼接
-- 拒答分支：空检索 / 低分 → answer_type=refusal，且不含排障步骤
+- 拒答判定：无有效引用 / 呈"依据不足"特征 → refusal
+
+编排链路（图结构、条件边、预算、rewrite）见 tests/test_graph.py。
 """
 
 import sys
 from pathlib import Path
-from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.chat import (  # noqa: E402
-    REFUSAL_TEXT_NO_CHUNK,
     build_prompt,
     decide_answer_type,
     extract_citations,
-    run_turn,
     validate_citations,
 )
 
@@ -157,104 +156,5 @@ class TestDecideAnswerType:
         assert decide_answer_type("CrashLoopBackOff 先看 describe[1]。", [{"chunk_id": "x"}], has_chunks=True) == "answered"
 
 
-class TestRefusalClearsCitations:
-    """FR-18③：明确拒答时禁止伪造引用（拒答却挂引用会误导用户）。"""
-
-    def _cfg(self):
-        return {
-            "retrieval_top_k": 5,
-            "retrieval_min_score": 0.35,
-            "llm_model_qa": "qwen-plus",
-            "answer_max_tokens": 256,
-            "llm_timeout_seconds": 5,
-            "bailian_base_url": "https://example.invalid",
-            "dashscope_api_key": "sk-test",
-            "embedding_model": "text-embedding-v4",
-            "hnsw_ef_search": 100,
-        }
-
-    def test_refusal_drops_all_citations(self):
-        """真实案例 m002/m005：答案说"依据不足"但挂了 [2]/[1][2][3]，必须清空。"""
-
-        def fake_gen(prompt, cfg):
-            return "知识库未提供该数值[2]。依据不足，无法回答。", {
-                "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2,
-            }
-
-        with patch("app.chat.get_config", return_value=self._cfg()), \
-             patch("app.chat.retrieve", return_value=CHUNKS), \
-             patch("app.chat.llm_generate", side_effect=fake_gen):
-            r = run_turn({"question": "那默认值是多少？", "owner_id": "u1", "session_id": "s1"})
-        assert r["answer_type"] == "refusal"
-        assert r["citations"] == [], "拒答不得携带引用（FR-18③）"
-
-
-class TestRunTurnRefusal:
-    """拒答分支：不得输出排障步骤（PRD §7.4 / FR-20）。"""
-
-    def _cfg(self):
-        return {
-            "retrieval_top_k": 5,
-            "retrieval_min_score": 0.35,
-            "llm_model_qa": "qwen-plus",
-            "answer_max_tokens": 256,
-            "llm_timeout_seconds": 5,
-            "bailian_base_url": "https://example.invalid",
-            "dashscope_api_key": "sk-test",
-            "embedding_model": "text-embedding-v4",
-            "hnsw_ef_search": 100,
-        }
-
-    def test_empty_retrieval_refuses(self):
-        with patch("app.chat.get_config", return_value=self._cfg()), \
-             patch("app.chat.retrieve", return_value=[]):
-            r = run_turn({"question": "公司差旅报销流程？", "owner_id": "u1", "session_id": "s1"})
-        assert r["answer_type"] == "refusal"
-        assert r["citations"] == []
-        assert r["final_text"] == REFUSAL_TEXT_NO_CHUNK
-        assert "kubectl" not in r["final_text"]
-
-    def test_low_score_refuses_with_top_snippet(self):
-        low = [dict(CHUNKS[0], score=0.10)]
-        with patch("app.chat.get_config", return_value=self._cfg()), \
-             patch("app.chat.retrieve", return_value=low):
-            r = run_turn({"question": "Redis 集群脑裂？", "owner_id": "u1", "session_id": "s1"})
-        assert r["answer_type"] == "refusal"
-        assert "最高分片段" in r["final_text"]
-        assert "0.1" in r["final_text"]
-        assert r["usage"]["llm_calls"] == 0  # 未调生成模型（FR-15）
-
-    def test_retrieval_failure_degrades_to_refusal(self):
-        from app.retrieval import RetrievalError
-
-        with patch("app.chat.get_config", return_value=self._cfg()), \
-             patch("app.chat.retrieve", side_effect=RetrievalError("EMBEDDING_FAILED", "boom")):
-            r = run_turn({"question": "问题", "owner_id": "u1", "session_id": "s1"})
-        assert r["answer_type"] == "refusal"
-        assert r["degraded"] is True
-        assert "retrieval_failed" in r["degrade_reasons"]
-
-    def test_answered_path_has_citations(self):
-        def fake_gen(prompt, cfg):
-            return "CrashLoopBackOff 需先看 describe[1]。", {
-                "prompt_tokens": 10,
-                "completion_tokens": 5,
-                "total_tokens": 15,
-            }
-
-        with patch("app.chat.get_config", return_value=self._cfg()), \
-             patch("app.chat.retrieve", return_value=CHUNKS), \
-             patch("app.chat.llm_generate", side_effect=fake_gen):
-            r = run_turn({"question": "怎么排查？", "owner_id": "u1", "session_id": "s1"})
-        assert r["answer_type"] == "answered"
-        assert len(r["citations"]) == 1
-        assert r["citations"][0]["chunk_id"] == CHUNKS[0]["chunk_id"]
-        assert r["usage"]["llm_calls"] == 1
-
-    def test_empty_question_raises(self):
-        import pytest
-
-        from app.chat import ChatError
-
-        with pytest.raises(ChatError):
-            run_turn({"question": "  ", "owner_id": "u1", "session_id": "s1"})
+# NOTE(S6)：编排类测试（引用清空 / 拒答分支）已迁移至 tests/test_graph.py，
+# 因为编排统一走 app.graph.run_turn（LangGraph 全图）。本文件只测被节点复用的纯工具函数。
