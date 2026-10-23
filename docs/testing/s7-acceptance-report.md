@@ -214,17 +214,19 @@ node_path   = ['router', 'retrieval', 'troubleshoot', 'evidence', 'final']
 | 根因 | `troubleshoot.py` 调用点只喂 `question`：`_extract_ports(question)`。而**端口清单这种多行数据用户就是贴在附件里的** → 提取到兜底占位 `{8080,tcp}` → 工具按"无重复端口"判无冲突 |
 | 性质 | **装配错误，不是纯函数错误** —— `_extract_ports` 本身完全正确（上一轮 `TestPortExtraction` 全绿），错在**调用点喂了什么文本** |
 | 修复 | ① 输入源改为 `attach_log + "\n" + question`（两者线索都不丢）；② 触发条件 `PORT_HINT.search(port_text)` 同样改用合并文本；③ 工具 1 `analyze_error_log` 的输入源一并修正（原 `attach_log or question` 在两者都存在时丢掉 question 的错误线索） |
-| 回归 | `test_graph.py::TestPortExtractionSourceWiring`（4 例）—— **故意走 `run_turn` 全链路**，纯函数测试不得再充当它的替身 |
+| 回归 | `test_graph.py::TestPortExtractionSourceWiring`（5 例）—— **故意走 `run_turn` 全链路 + 节点级直调**，纯函数测试不得再充当它的替身。用例形式按 S8 任务书指定：`question="8080 起不来，冲突吗？"` + 清单在 `attach_log`，断言 `conflicts` 非空 |
 
-**修复前后实测对比**（Python httpx 客户端，走对外 `/sessions/{id}/messages`）：
+**修复前后实测对比**（Python httpx 客户端，走对外 `/sessions/{id}/messages`；**禁止 Windows shell curl** —— 中文经 shell 传参会被转义破坏，见 `test-plan` G7）：
 
-输入：问题 `服务起不来，帮我看看` + `attach_log = "8080 nginx 正在监听\n8080 java 也在用"`
+输入：问题 `8080 起不来，冲突吗？` + `attach_log = "8080 nginx 正在监听\n8080 java 也在用"`
 
 | | 修复前 | 修复后 |
 |---|---|---|
 | `tool_calls` | `[analyze_error_log]`（端口工具**未调用**） | `[analyze_error_log, check_port_conflict]` |
 | 工具证据 | 无冲突 | **"检查 2 项端口，发现 1 处冲突"** |
 | 回答 | 未提及端口冲突 | "**端口冲突：工具检测到 1 处端口冲突，可能直接导致服务启动失败**" |
+
+（另一组同源输入 `服务起不来，帮我看看` + 同一清单，结论一致。）
 
 > **本轮循环的反复模式（值得记）**：S7-A（router 不看 attach_log）、S7-B（端口提取去重）、S7-C（端口提取输入源）—— 三次都是**"函数对、装配错"**，而单测盲区都在"没测调用点喂了什么文本"。已在 `test-plan` 补 G7 记录该教训（含中文验收一律用 Python httpx）。
 

@@ -699,7 +699,11 @@ class TestPortExtractionSourceWiring:
     PORT_LIST = "8080 nginx 正在监听\n8080 java 也在用"
 
     def test_attach_log_is_used_as_port_source(self, monkeypatch):
-        """清单放 attach_log + 问题只说"起不来" → 必须报出冲突（走 run_turn）。"""
+        """清单放 attach_log + 问题只说"起不来" → 必须报出冲突（走 run_turn）。
+
+        用例形式按 S8 任务书指定：question = "8080 起不来，冲突吗？"，
+        端口清单在 attach_log —— 断言 conflicts 非空。
+        """
         patch_cfg(monkeypatch)
         from app.tools import ToolExecutor
 
@@ -712,7 +716,7 @@ class TestPortExtractionSourceWiring:
             return "端口冲突[1]"
 
         r = run(
-            "服务起不来，帮我看看",
+            "8080 起不来，冲突吗？",
             llm_call=llm,
             tool_executor=ex,
             retrieve_fn=lambda o, q, c: CHUNKS,
@@ -726,6 +730,43 @@ class TestPortExtractionSourceWiring:
             "工具证据未报出冲突（说明提取的输入源不含 attach_log）"
         )
         assert r["answer_type"] == "answered"
+
+    def test_node_level_conflicts_non_empty(self):
+        """节点级直调（任务书指定形式）：断言 conflicts 结构非空。
+
+        与上一条互补：上条走 run_turn 全链路，本条直接调 troubleshoot 节点、
+        直接检查工具返回值中的 `conflicts`，避免"证据文案变了但判据没变"的隐性失效。
+        """
+        from app.tools import ToolExecutor
+
+        from app.graph.budget import Budget
+        from app.graph.troubleshoot import troubleshoot_node
+
+        ex = ToolExecutor()
+        results: list[dict] = []
+
+        class RecordingExecutor(ToolExecutor):
+            def invoke_safe(self, name, args):
+                out = super().invoke_safe(name, args)
+                if name == "check_port_conflict":
+                    results.append(out)
+                return out
+
+        rex = RecordingExecutor()
+        troubleshoot_node(
+            {
+                "question": "8080 起不来，冲突吗？",
+                "attach_log": self.PORT_LIST,
+                "route": "troubleshooting",
+                "chunks": [],
+            },
+            cfg={}, budget=Budget(), llm_call=lambda r, p: "x", tool_executor=rex,
+        )
+        assert results, "端口工具未被调用"
+        conflicts = results[0]["result"].get("conflicts")
+        assert conflicts, f"conflicts 为空：{results[0]['result']}"
+        assert conflicts[0]["port"] == 8080
+        assert conflicts[0]["conflict"] is True
 
     def test_source_merges_attach_log_and_question(self):
         """输入源 = attach_log + question（两边都有线索时都不丢）。"""
