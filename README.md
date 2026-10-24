@@ -66,6 +66,18 @@
 > 报告含 git commit、逐题结果、judge 分列（用户 / AI / 混合三口径），**未跑项一律 `NOT RUN`**，不填推算值。
 > 环境：干净环境 `down -v → up -d → 冒烟通过` **28.4s**（目标 ≤5 分钟）。
 
+**每个数字的出处（逐项可查，不靠印象）**
+
+| 数字 | 出处 |
+|---|---|
+| Recall@5 / MRR@5 / 拒答正确率 / 过度拒答率 / 多轮保持率 | [`2026-10-24T1435.md`](ai-service/evals/reports/2026-10-24T1435.md) §1 指标表 |
+| 引用内容支持率 / 任务成功率 1.000（三口径） | [`2026-10-24T1435_v3-final.md`](ai-service/evals/reports/2026-10-24T1435_v3-final.md) §2；判定记录 [`a3b_user_review_v3.md`](docs/testing/a3b_user_review_v3.md) |
+| 延迟 P95 6.6s / 10.0s；方案 A 前后对比 | [`s8v3-eval-report.md`](docs/testing/s8v3-eval-report.md) §1「延迟」；复测脚本 `scripts/kb_qa_latency.py` |
+| 引用 ID 有效率 100% | 同上报告「引用 ID 有效率（硬线，独立于 7 项）」 |
+| 残留（检测器方差 / V2 候选） | [`v3_residual_notes.md`](docs/testing/v3_residual_notes.md) |
+| 异常矩阵 18/18 | [`s8-acceptance-report.md`](docs/testing/s8-acceptance-report.md) §2 |
+| 冷启动 28.4s | 同上 §3（A11 分阶段计时） |
+
 **⭐ 支持率 1.000 的读法（请务必看这段）**
 
 这是 **5 条人工抽检 + 15 条 AI 判定** 的**混合口径**，**不是"每条答案每句都干净"**：
