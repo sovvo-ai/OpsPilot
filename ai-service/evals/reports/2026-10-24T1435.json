@@ -1,0 +1,1962 @@
+{
+  "meta": {
+    "git_commit": "1334ffc",
+    "started_at": "2026-10-24T06:41:14.476632+00:00",
+    "duration_s": 224.7,
+    "models": {
+      "router": "qwen-flash",
+      "qa": "qwen-plus",
+      "troubleshoot": "qwen-plus",
+      "checker": "qwen-plus",
+      "final": "qwen-plus",
+      "embedding": "text-embedding-v4"
+    },
+    "params": {
+      "retrieval_top_k": 5,
+      "retrieval_min_score": 0.35,
+      "hnsw_ef_search": 100
+    },
+    "gold_reviewed": true,
+    "dataset": "evals/datasets/qa_golden.jsonl",
+    "total_cases": 35,
+    "seeds": {
+      "docs": [
+        {
+          "name": "k8s-pod-troubleshooting.md",
+          "doc_id": "4bc9f026-c811-4dd8-b5fb-90d89071f6e2",
+          "status": "completed",
+          "chunks": 2,
+          "deduplicated": true
+        },
+        {
+          "name": "linux-network-troubleshooting.md",
+          "doc_id": "356f05d5-7494-42fc-807b-72b13e4108aa",
+          "status": "completed",
+          "chunks": 1,
+          "deduplicated": true
+        },
+        {
+          "name": "mysql-slow-query.md",
+          "doc_id": "90dceaef-32c9-42a2-9c8c-b9eb1fd98383",
+          "status": "completed",
+          "chunks": 2,
+          "deduplicated": true
+        },
+        {
+          "name": "nginx-502-upstream.md",
+          "doc_id": "a5029bf8-30bc-4746-846f-6522a258c083",
+          "status": "completed",
+          "chunks": 2,
+          "deduplicated": true
+        },
+        {
+          "name": "observability-logging.md",
+          "doc_id": "4b4181cc-e185-4121-a590-6927275dbb6d",
+          "status": "completed",
+          "chunks": 1,
+          "deduplicated": true
+        }
+      ],
+      "all_completed": true
+    },
+    "smoke": {
+      "qid": "q001",
+      "question": "Pod 一直 CrashLoopBackOff 应该怎么排查？",
+      "got_answer_type": "answered",
+      "citations": 3,
+      "recall_at_5": 1.0,
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "passed": true
+    }
+  },
+  "metrics": {
+    "recall_at_5": 1.0,
+    "mrr_at_5": 0.812121212121212,
+    "citation_id_validity": 1.0,
+    "citation_id_validity_all_pass": true,
+    "refusal_accuracy": 1.0,
+    "over_refusal_rate": 0.0,
+    "multiturn_retention": 1.0,
+    "citation_support_rate": "NOT RUN",
+    "task_success_rate": "NOT RUN",
+    "latency": {
+      "kb_qa_p50_ms": 2992,
+      "kb_qa_p95_ms": 6640,
+      "log_diag_p50_ms": 4999,
+      "log_diag_p95_ms": 10015,
+      "overall_p50_ms": 3359,
+      "overall_p95_ms": 9500
+    },
+    "thresholds": {
+      "recall_at_5": 0.75,
+      "mrr_at_5": 0.6,
+      "citation_support_rate": 0.9,
+      "refusal_accuracy": 0.85,
+      "over_refusal_rate": 0.15,
+      "task_success_rate": 0.7,
+      "multiturn_retention": 0.9,
+      "citation_id_validity": 1.0,
+      "latency_kb_qa_p95_ms": 8000,
+      "latency_log_diag_p95_ms": 25000
+    }
+  },
+  "metrics_by_judge": {
+    "用户口径（user_recheck=true，判定人留空）": {
+      "count": 5,
+      "citation_support_rate": "NOT RUN",
+      "pending_qids": [
+        "q028",
+        "q029",
+        "m001",
+        "q001",
+        "q002"
+      ]
+    },
+    "AI 口径（judge=AI）": {
+      "count": 15,
+      "citation_support_rate": 1.0
+    },
+    "混合口径（AI 已判 + 用户已填）": {
+      "count": 15,
+      "citation_support_rate": 1.0
+    }
+  },
+  "a3b_reviews": [
+    {
+      "qid": "q028",
+      "category": "citation_risk",
+      "reason": "引用风险题：最易出现'引用存在但不支持结论'",
+      "user_recheck": true,
+      "judge": null,
+      "judged_at": null,
+      "verdict": null
+    },
+    {
+      "qid": "q029",
+      "category": "citation_risk",
+      "reason": "引用风险题：最易出现'引用存在但不支持结论'",
+      "user_recheck": true,
+      "judge": null,
+      "judged_at": null,
+      "verdict": null
+    },
+    {
+      "qid": "m001",
+      "category": "multiturn",
+      "reason": "多轮改写路径：引用链最易断",
+      "user_recheck": true,
+      "judge": null,
+      "judged_at": null,
+      "verdict": null
+    },
+    {
+      "qid": "q001",
+      "category": "kb_qa",
+      "reason": "kb_qa 长答案：引用是否逐句支撑人工难自动校验",
+      "user_recheck": true,
+      "judge": null,
+      "judged_at": null,
+      "verdict": null
+    },
+    {
+      "qid": "q002",
+      "category": "kb_qa",
+      "reason": "kb_qa 长答案：引用是否逐句支撑人工难自动校验",
+      "user_recheck": true,
+      "judge": null,
+      "judged_at": null,
+      "verdict": null
+    },
+    {
+      "qid": "q003",
+      "category": "kb_qa",
+      "reason": "常规抽检",
+      "user_recheck": false,
+      "judge": "AI",
+      "judged_at": "2026-10-24T06:44:59.182981+00:00",
+      "verdict": "supported"
+    },
+    {
+      "qid": "q004",
+      "category": "kb_qa",
+      "reason": "常规抽检",
+      "user_recheck": false,
+      "judge": "AI",
+      "judged_at": "2026-10-24T06:44:59.182981+00:00",
+      "verdict": "supported"
+    },
+    {
+      "qid": "q005",
+      "category": "kb_qa",
+      "reason": "常规抽检",
+      "user_recheck": false,
+      "judge": "AI",
+      "judged_at": "2026-10-24T06:44:59.182981+00:00",
+      "verdict": "supported"
+    },
+    {
+      "qid": "q006",
+      "category": "kb_qa",
+      "reason": "常规抽检",
+      "user_recheck": false,
+      "judge": "AI",
+      "judged_at": "2026-10-24T06:44:59.182981+00:00",
+      "verdict": "supported"
+    },
+    {
+      "qid": "q007",
+      "category": "kb_qa",
+      "reason": "常规抽检",
+      "user_recheck": false,
+      "judge": "AI",
+      "judged_at": "2026-10-24T06:44:59.182981+00:00",
+      "verdict": "supported"
+    },
+    {
+      "qid": "q008",
+      "category": "kb_qa",
+      "reason": "常规抽检",
+      "user_recheck": false,
+      "judge": "AI",
+      "judged_at": "2026-10-24T06:44:59.182981+00:00",
+      "verdict": "supported"
+    },
+    {
+      "qid": "q009",
+      "category": "kb_qa",
+      "reason": "常规抽检",
+      "user_recheck": false,
+      "judge": "AI",
+      "judged_at": "2026-10-24T06:44:59.182981+00:00",
+      "verdict": "supported"
+    },
+    {
+      "qid": "q010",
+      "category": "kb_qa",
+      "reason": "常规抽检",
+      "user_recheck": false,
+      "judge": "AI",
+      "judged_at": "2026-10-24T06:44:59.182981+00:00",
+      "verdict": "supported"
+    },
+    {
+      "qid": "q011",
+      "category": "log_diag",
+      "reason": "常规抽检",
+      "user_recheck": false,
+      "judge": "AI",
+      "judged_at": "2026-10-24T06:44:59.182981+00:00",
+      "verdict": "supported"
+    },
+    {
+      "qid": "q012",
+      "category": "log_diag",
+      "reason": "常规抽检",
+      "user_recheck": false,
+      "judge": "AI",
+      "judged_at": "2026-10-24T06:44:59.182981+00:00",
+      "verdict": "supported"
+    },
+    {
+      "qid": "q013",
+      "category": "log_diag",
+      "reason": "常规抽检",
+      "user_recheck": false,
+      "judge": "AI",
+      "judged_at": "2026-10-24T06:44:59.182981+00:00",
+      "verdict": "supported"
+    },
+    {
+      "qid": "q014",
+      "category": "log_diag",
+      "reason": "常规抽检",
+      "user_recheck": false,
+      "judge": "AI",
+      "judged_at": "2026-10-24T06:44:59.182981+00:00",
+      "verdict": "supported"
+    },
+    {
+      "qid": "q015",
+      "category": "log_diag",
+      "reason": "常规抽检",
+      "user_recheck": false,
+      "judge": "AI",
+      "judged_at": "2026-10-24T06:44:59.182981+00:00",
+      "verdict": "supported"
+    },
+    {
+      "qid": "q016",
+      "category": "log_diag",
+      "reason": "常规抽检",
+      "user_recheck": false,
+      "judge": "AI",
+      "judged_at": "2026-10-24T06:44:59.182981+00:00",
+      "verdict": "supported"
+    },
+    {
+      "qid": "q017",
+      "category": "log_diag",
+      "reason": "常规抽检",
+      "user_recheck": false,
+      "judge": "AI",
+      "judged_at": "2026-10-24T06:44:59.182981+00:00",
+      "verdict": "supported"
+    }
+  ],
+  "cases": [
+    {
+      "qid": "q001",
+      "category": "kb_qa",
+      "question": "Pod 一直 CrashLoopBackOff 应该怎么排查？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 6316,
+      "latency_ms": 6640,
+      "retrieval_top_score": 0.7765,
+      "retrieved_chunk_ids": [
+        "55b061c8-530c-5064-a45d-3c01d52f9ad9",
+        "ea4c0bd2-da7c-54f0-a1c2-17d0ae0b7afa",
+        "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 1.0,
+      "citation_id_valid": true,
+      "citation_count": 3,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "55b061c8-530c-5064-a45d-3c01d52f9ad9",
+          "doc_title": "k8s-pod-troubleshooting",
+          "score": 0.7765,
+          "source_type": "kb",
+          "status": "live"
+        },
+        {
+          "index": 2,
+          "chunk_id": "ea4c0bd2-da7c-54f0-a1c2-17d0ae0b7afa",
+          "doc_title": "k8s-pod-troubleshooting",
+          "score": 0.7639,
+          "source_type": "kb",
+          "status": "live"
+        },
+        {
+          "index": 3,
+          "chunk_id": "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+          "doc_title": "linux-network-troubleshooting",
+          "score": 0.5135,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [],
+      "final_text": "Pod 一直 CrashLoopBackOff 的排查步骤如下：\n\n1. 查看 Pod 状态与重启次数：`kubectl get pod` 确认状态为 `CrashLoopBackOff` 及重启次数；  \n2. 检查 Events 和 Last State：`kubectl describe pod` 查看 Events 中的错误提示，以及 `Last State` 下的 `Exit Code` —— Exit Code 137 通常是 OOMKilled，143 是 SIGTERM（可能因 livenessProbe 失败），1 多为应用启动失败 `[1]`；  \n3. 获取上一轮日志：`kubectl logs --previous <pod-name>` 分析崩溃前输出 `[1]`；  \n4. 核查资源与探针配置：确认 `resources.limits.memory` 是否过低导致 OOM；检查 livenessProbe 是否误配为耗时检查，建议启动慢的应用改用 startupProbe `[2]`；  \n5. 按标准顺序推进：状态 → Events → 上轮日志 → 资源/探针 → 节点问题，绝大多数情况前三步即可定位 `[3]`。",
+      "final_text_head": "Pod 一直 CrashLoopBackOff 的排查步骤如下：\n\n1. 查看 Pod 状态与重启次数：`kubectl get pod` 确认状态为 `CrashLoopBackOff` 及重启次数；  \n2. 检查 Events 和 Last State：`kubectl describe pod` 查看 Events 中的错误提示，以及 `Last State` 下的 `Exit Code`",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q002",
+      "category": "kb_qa",
+      "question": "Exit Code 137 一般代表什么？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 4206,
+      "latency_ms": 4561,
+      "retrieval_top_score": 0.4767,
+      "retrieved_chunk_ids": [
+        "ea4c0bd2-da7c-54f0-a1c2-17d0ae0b7afa",
+        "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+        "55b061c8-530c-5064-a45d-3c01d52f9ad9"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 0.2,
+      "citation_id_valid": true,
+      "citation_count": 2,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "ea4c0bd2-da7c-54f0-a1c2-17d0ae0b7afa",
+          "doc_title": "k8s-pod-troubleshooting",
+          "score": 0.4767,
+          "source_type": "kb",
+          "status": "live"
+        },
+        {
+          "index": 2,
+          "chunk_id": "55b061c8-530c-5064-a45d-3c01d52f9ad9",
+          "doc_title": "k8s-pod-troubleshooting",
+          "score": 0.4075,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [],
+      "final_text": "Exit Code 137 通常表示容器因内存超限被内核 OOM Killer 终止，即 `OOMKilled`[1]。  \n该状态对应容器的 `resources.limits.memory` 被突破，进程收到 SIGKILL 信号而退出[1]。  \n常见于 Java 等应用未合理设置堆上限（建议堆大小为 memory limit 的 70% 左右），导致堆外内存或元空间耗尽[1]。  \n也可通过 `kubectl describe pod` 查看 Events 中是否出现 `OOMKilled` 事件，或检查容器状态中的 `lastState.terminated.reason` 字段确认[5]。",
+      "final_text_head": "Exit Code 137 通常表示容器因内存超限被内核 OOM Killer 终止，即 `OOMKilled`[1]。  \n该状态对应容器的 `resources.limits.memory` 被突破，进程收到 SIGKILL 信号而退出[1]。  \n常见于 Java 等应用未合理设置堆上限（建议堆大小为 memory limit 的 70% 左右），导致堆外内存或元空间耗尽[1]。  \n也可通",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q003",
+      "category": "kb_qa",
+      "question": "readinessProbe 失败会导致容器重启吗？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 2289,
+      "latency_ms": 2625,
+      "retrieval_top_score": 0.6617,
+      "retrieved_chunk_ids": [
+        "ea4c0bd2-da7c-54f0-a1c2-17d0ae0b7afa",
+        "55b061c8-530c-5064-a45d-3c01d52f9ad9",
+        "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+        "84baa44b-8309-54fe-b699-d3f8eda940cb"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 1.0,
+      "citation_id_valid": true,
+      "citation_count": 2,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "ea4c0bd2-da7c-54f0-a1c2-17d0ae0b7afa",
+          "doc_title": "k8s-pod-troubleshooting",
+          "score": 0.6617,
+          "source_type": "kb",
+          "status": "live"
+        },
+        {
+          "index": 2,
+          "chunk_id": "55b061c8-530c-5064-a45d-3c01d52f9ad9",
+          "doc_title": "k8s-pod-troubleshooting",
+          "score": 0.6056,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [],
+      "final_text": "不会。readinessProbe 失败只会把 Pod 从 Service 的端点（Endpoints）中摘除，使其不再接收流量，但**不会导致容器重启** `[2]`。  \n容器重启仅由 livenessProbe 失败触发 `[1]`。",
+      "final_text_head": "不会。readinessProbe 失败只会把 Pod 从 Service 的端点（Endpoints）中摘除，使其不再接收流量，但**不会导致容器重启** `[2]`。  \n容器重启仅由 livenessProbe 失败触发 `[1]`。",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q004",
+      "category": "kb_qa",
+      "question": "启动很慢的应用应该用哪种探针保护？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 1854,
+      "latency_ms": 2203,
+      "retrieval_top_score": 0.4735,
+      "retrieved_chunk_ids": [
+        "6d4d7f0c-0d49-5f3d-8175-927604c17cf0",
+        "ea4c0bd2-da7c-54f0-a1c2-17d0ae0b7afa",
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+        "bb60c9de-bf65-5565-8e84-cabd6e1670cb"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 0.5,
+      "citation_id_valid": true,
+      "citation_count": 1,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "ea4c0bd2-da7c-54f0-a1c2-17d0ae0b7afa",
+          "doc_title": "k8s-pod-troubleshooting",
+          "score": 0.4682,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [],
+      "final_text": "启动很慢的应用应使用 `startupProbe` 保护 `[2]`。  \n常见错误是将耗时的启动检查放入 `livenessProbe`，导致应用尚未启动完成就被反复重启 `[2]`。",
+      "final_text_head": "启动很慢的应用应使用 `startupProbe` 保护 `[2]`。  \n常见错误是将耗时的启动检查放入 `livenessProbe`，导致应用尚未启动完成就被反复重启 `[2]`。",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q005",
+      "category": "kb_qa",
+      "question": "explain 里出现 Using filesort 说明什么问题？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 1862,
+      "latency_ms": 2250,
+      "retrieval_top_score": 0.6499,
+      "retrieved_chunk_ids": [
+        "6d4d7f0c-0d49-5f3d-8175-927604c17cf0",
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+        "84baa44b-8309-54fe-b699-d3f8eda940cb"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 1.0,
+      "citation_id_valid": true,
+      "citation_count": 1,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "6d4d7f0c-0d49-5f3d-8175-927604c17cf0",
+          "doc_title": "mysql-slow-query",
+          "score": 0.6499,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [],
+      "final_text": "`explain` 中出现 `Using filesort` 说明该查询的排序操作无法利用索引完成，MySQL 需要额外执行文件排序（filesort），属于性能隐患，需优化 [1]。",
+      "final_text_head": "`explain` 中出现 `Using filesort` 说明该查询的排序操作无法利用索引完成，MySQL 需要额外执行文件排序（filesort），属于性能隐患，需优化 [1]。",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q006",
+      "category": "kb_qa",
+      "question": "like '%abc' 这种写法能用上索引吗？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 2214,
+      "latency_ms": 2547,
+      "retrieval_top_score": 0.5303,
+      "retrieved_chunk_ids": [
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+        "6d4d7f0c-0d49-5f3d-8175-927604c17cf0"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 1.0,
+      "citation_id_valid": true,
+      "citation_count": 1,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+          "doc_title": "mysql-slow-query",
+          "score": 0.5303,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [],
+      "final_text": "不能。`like '%abc'` 属于前导通配的模糊匹配，索引会失效 `[1]`。  \n应改用 `like 'abc%'`（后缀通配）以利用索引，或考虑全文索引、倒排索引等替代方案。",
+      "final_text_head": "不能。`like '%abc'` 属于前导通配的模糊匹配，索引会失效 `[1]`。  \n应改用 `like 'abc%'`（后缀通配）以利用索引，或考虑全文索引、倒排索引等替代方案。",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q007",
+      "category": "kb_qa",
+      "question": "Connection refused 和 Connection timed out 有什么区别？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 3796,
+      "latency_ms": 4125,
+      "retrieval_top_score": 0.6474,
+      "retrieved_chunk_ids": [
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+        "84baa44b-8309-54fe-b699-d3f8eda940cb",
+        "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+        "6d4d7f0c-0d49-5f3d-8175-927604c17cf0"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 0.3333333333333333,
+      "citation_id_valid": true,
+      "citation_count": 1,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+          "doc_title": "linux-network-troubleshooting",
+          "score": 0.6074,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [],
+      "final_text": "`Connection refused` 表示目标端口**没有进程监听**，或防火墙主动拒绝连接，问题在服务端（如服务未启动、监听地址非 `0.0.0.0`、防火墙 DROP）[3]。  \n`Connection timed out` 表示请求报文**被丢弃**，未收到任何响应，常见于防火墙丢包、安全组未放行、路由不可达等网络路径问题[3]。  \n`No route to host` 则表示链路层不可达，通常是同网段主机不存在或 ARP 失败[3]。",
+      "final_text_head": "`Connection refused` 表示目标端口**没有进程监听**，或防火墙主动拒绝连接，问题在服务端（如服务未启动、监听地址非 `0.0.0.0`、防火墙 DROP）[3]。  \n`Connection timed out` 表示请求报文**被丢弃**，未收到任何响应，常见于防火墙丢包、安全组未放行、路由不可达等网络路径问题[3]。  \n`No route to host` 则表示链路层",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q008",
+      "category": "kb_qa",
+      "question": "Nginx 的 502 和 504 分别代表什么？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 2991,
+      "latency_ms": 3359,
+      "retrieval_top_score": 0.8123,
+      "retrieved_chunk_ids": [
+        "84baa44b-8309-54fe-b699-d3f8eda940cb",
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+        "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+        "b949c964-69d5-5718-9afe-24107c9a903c"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 1.0,
+      "citation_id_valid": true,
+      "citation_count": 1,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "84baa44b-8309-54fe-b699-d3f8eda940cb",
+          "doc_title": "nginx-502-upstream",
+          "score": 0.8123,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [],
+      "final_text": "- 502 Bad Gateway：表示上游返回了非法响应，或连接被上游重置，Nginx 无法解析响应；即“上游答错了”，需排查上游进程状态[1]。  \n- 504 Gateway Timeout：表示 Nginx 等待上游响应超时，上游可能仍在处理，只是超过了 `proxy_read_timeout`；即“上游没答完”，需检查耗时与超时配置[1]。",
+      "final_text_head": "- 502 Bad Gateway：表示上游返回了非法响应，或连接被上游重置，Nginx 无法解析响应；即“上游答错了”，需排查上游进程状态[1]。  \n- 504 Gateway Timeout：表示 Nginx 等待上游响应超时，上游可能仍在处理，只是超过了 `proxy_read_timeout`；即“上游没答完”，需检查耗时与超时配置[1]。",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q009",
+      "category": "kb_qa",
+      "question": "proxy_read_timeout 的默认值是多少？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 1273,
+      "latency_ms": 1594,
+      "retrieval_top_score": 0.6821,
+      "retrieved_chunk_ids": [
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+        "84baa44b-8309-54fe-b699-d3f8eda940cb",
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+        "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+        "b949c964-69d5-5718-9afe-24107c9a903c"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 1.0,
+      "citation_id_valid": true,
+      "citation_count": 1,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+          "doc_title": "nginx-502-upstream",
+          "score": 0.6821,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [],
+      "final_text": "`proxy_read_timeout` 的默认值是 60 秒 `[1]`。",
+      "final_text_head": "`proxy_read_timeout` 的默认值是 60 秒 `[1]`。",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q010",
+      "category": "kb_qa",
+      "question": "ERROR 级别的日志应该怎么用？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "troubleshooting",
+      "node_path": [
+        "router",
+        "retrieval",
+        "troubleshoot",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 5903,
+      "latency_ms": 6264,
+      "retrieval_top_score": 0.6365,
+      "retrieved_chunk_ids": [
+        "b949c964-69d5-5718-9afe-24107c9a903c",
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+        "84baa44b-8309-54fe-b699-d3f8eda940cb",
+        "bb60c9de-bf65-5565-8e84-cabd6e1670cb"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 1.0,
+      "citation_id_valid": true,
+      "citation_count": 1,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "b949c964-69d5-5718-9afe-24107c9a903c",
+          "doc_title": "observability-logging",
+          "score": 0.6365,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [
+        "analyze_error_log"
+      ],
+      "final_text": "ERROR 级别日志**仅用于需要人工介入的失败场景**，例如请求无法完成、数据不一致、依赖服务不可用等[1]。  \n它不是通用异常兜底，**不得用于可自愈或预期内的异常**（如重试成功、降级返回）——这类应使用 WARN[1]。  \n每条 ERROR 日志**必须包含错误码与 `request_id`**，否则无法与监控告警对齐、难以全链路定位[1]。  \n禁止在 ERROR 中输出密钥、令牌、完整身份证号等敏感信息；确需辅助排查时，只记录哈希前缀[1]。  \n\n（模型通用知识，无 KB 出处）：ERROR 不应高频出现，若单位时间大量刷出，需立即检查服务健康状态或上游依赖。",
+      "final_text_head": "ERROR 级别日志**仅用于需要人工介入的失败场景**，例如请求无法完成、数据不一致、依赖服务不可用等[1]。  \n它不是通用异常兜底，**不得用于可自愈或预期内的异常**（如重试成功、降级返回）——这类应使用 WARN[1]。  \n每条 ERROR 日志**必须包含错误码与 `request_id`**，否则无法与监控告警对齐、难以全链路定位[1]。  \n禁止在 ERROR 中输出密钥、令牌、",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q011",
+      "category": "log_diag",
+      "question": "服务日志：level=error msg=\"dial tcp 10.2.0.5:3306: connect: connection refused\"，这是什么问题？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "troubleshooting",
+      "node_path": [
+        "router",
+        "retrieval",
+        "troubleshoot",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 9652,
+      "latency_ms": 10000,
+      "retrieval_top_score": 0.6571,
+      "retrieved_chunk_ids": [
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+        "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+        "b949c964-69d5-5718-9afe-24107c9a903c",
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+        "84baa44b-8309-54fe-b699-d3f8eda940cb"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 0.5,
+      "citation_id_valid": true,
+      "citation_count": 1,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+          "doc_title": "linux-network-troubleshooting",
+          "score": 0.6171,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [
+        "analyze_error_log"
+      ],
+      "final_text": "该日志 `dial tcp 10.2.0.5:3306: connect: connection refused` 表示客户端尝试连接 MySQL（3306 端口）时，**目标地址无进程监听该端口，或防火墙主动拒绝连接**[2]。\n\n排查步骤如下：\n\n1. **确认 MySQL 服务是否运行并监听**：在 `10.2.0.5` 主机上执行 `ss -lntp | grep :3306`，检查是否有进程监听 `0.0.0.0:3306` 或 `*:3306`；若仅监听 `127.0.0.1:3306`，则容器/外部无法访问[2]。  \n2. **确认网络可达性**：从客户端 `ping 10.2.0.5`，若通但 `telnet 10.2.0.5 3306` 失败，属 `Connection refused` 范畴，非超时类问题[2]。  \n3. **检查防火墙与安全组**：确认 `10.2.0.5` 主机的 iptables/firewalld 未拦截 3306，且云环境安全组已放行该端口[2]。  \n\n（模型通用知识，无 KB 出处）：还需检查 MySQL 配置中 `bind-address` 是否允许远程连接，以及用户账号是否授权从该客户端 IP 访问。",
+      "final_text_head": "该日志 `dial tcp 10.2.0.5:3306: connect: connection refused` 表示客户端尝试连接 MySQL（3306 端口）时，**目标地址无进程监听该端口，或防火墙主动拒绝连接**[2]。\n\n排查步骤如下：\n\n1. **确认 MySQL 服务是否运行并监听**：在 `10.2.0.5` 主机上执行 `ss -lntp | grep :3306`，检查是否有",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q012",
+      "category": "log_diag",
+      "question": "日志报 Error 1040: Too many connections，怎么定位？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "troubleshooting",
+      "node_path": [
+        "router",
+        "retrieval",
+        "troubleshoot",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 4891,
+      "latency_ms": 5219,
+      "retrieval_top_score": 0.753,
+      "retrieved_chunk_ids": [
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+        "6d4d7f0c-0d49-5f3d-8175-927604c17cf0",
+        "84baa44b-8309-54fe-b699-d3f8eda940cb",
+        "b949c964-69d5-5718-9afe-24107c9a903c"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 1.0,
+      "citation_id_valid": true,
+      "citation_count": 1,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+          "doc_title": "mysql-slow-query",
+          "score": 0.753,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [
+        "analyze_error_log"
+      ],
+      "final_text": "报错 `Error 1040: Too many connections` 对应 MySQL 连接数打满，依据知识库：\n\n- 表示连接数达到 `max_connections` 上限 `[1]`；  \n- 首先执行 `show processlist` 查看是否存在大量 `Sleep` 状态连接 `[1]`；  \n- 检查应用端连接池是否未正确归还连接 `[1]`；  \n- 同时确认是否有长事务阻塞连接释放（长事务会加剧连接堆积） `[1]`。\n\n（模型通用知识，无 KB 出处）：可进一步查 `show variables like 'max_connections';` 和 `show status like 'Threads_connected';` 做量化比对。",
+      "final_text_head": "报错 `Error 1040: Too many connections` 对应 MySQL 连接数打满，依据知识库：\n\n- 表示连接数达到 `max_connections` 上限 `[1]`；  \n- 首先执行 `show processlist` 查看是否存在大量 `Sleep` 状态连接 `[1]`；  \n- 检查应用端连接池是否未正确归还连接 `[1]`；  \n- 同时确认是否有长事务阻",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q013",
+      "category": "log_diag",
+      "question": "日志出现 Lock wait timeout exceeded; try restarting transaction，原因是什么？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 3906,
+      "latency_ms": 4235,
+      "retrieval_top_score": 0.7731,
+      "retrieved_chunk_ids": [
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+        "6d4d7f0c-0d49-5f3d-8175-927604c17cf0",
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+        "84baa44b-8309-54fe-b699-d3f8eda940cb",
+        "bb60c9de-bf65-5565-8e84-cabd6e1670cb"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 1.0,
+      "citation_id_valid": true,
+      "citation_count": 1,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+          "doc_title": "mysql-slow-query",
+          "score": 0.7731,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [],
+      "final_text": "该报错表示事务等待行锁超时，默认阈值为 50 秒 `[1]`。  \n根本原因是存在阻塞源事务，常见于长事务未提交，导致其持有的锁持续阻塞其他事务 `[1]`。  \n需通过 `information_schema.innodb_trx` 查询阻塞源事务并确认是否为长事务 `[1]`。  \n长事务会同时引发锁等待与 undo 日志膨胀，属于必须优先处理的问题 `[1]`。  \n\n（模型通用知识，无 KB 出处）：可结合 `innodb_lock_waits` 视图定位具体阻塞关系。",
+      "final_text_head": "该报错表示事务等待行锁超时，默认阈值为 50 秒 `[1]`。  \n根本原因是存在阻塞源事务，常见于长事务未提交，导致其持有的锁持续阻塞其他事务 `[1]`。  \n需通过 `information_schema.innodb_trx` 查询阻塞源事务并确认是否为长事务 `[1]`。  \n长事务会同时引发锁等待与 undo 日志膨胀，属于必须优先处理的问题 `[1]`。  \n\n（模型通用知识，无 K",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q014",
+      "category": "log_diag",
+      "question": "Nginx 日志：upstream prematurely closed connection while reading response header，说明什么？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 3957,
+      "latency_ms": 4312,
+      "retrieval_top_score": 0.7852,
+      "retrieved_chunk_ids": [
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+        "84baa44b-8309-54fe-b699-d3f8eda940cb",
+        "b949c964-69d5-5718-9afe-24107c9a903c",
+        "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 1.0,
+      "citation_id_valid": true,
+      "citation_count": 2,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+          "doc_title": "nginx-502-upstream",
+          "score": 0.7852,
+          "source_type": "kb",
+          "status": "live"
+        },
+        {
+          "index": 2,
+          "chunk_id": "84baa44b-8309-54fe-b699-d3f8eda940cb",
+          "doc_title": "nginx-502-upstream",
+          "score": 0.668,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [],
+      "final_text": "该日志表明：上游服务（upstream）在 Nginx 尚未读取完响应头时，主动关闭了连接 `[1]`。\n\n这属于 502 Bad Gateway 的典型表现之一，说明问题出在上游服务侧，而非 Nginx 超时配置 —— 即上游进程可能已崩溃、被杀、或自身设置了更短的超时并提前断连 `[2]`。\n\n需优先排查上游服务的存活状态、错误日志及自身超时设置；Nginx 侧的 `proxy_read_timeout` 等参数通常无需调整 `[1]`。",
+      "final_text_head": "该日志表明：上游服务（upstream）在 Nginx 尚未读取完响应头时，主动关闭了连接 `[1]`。\n\n这属于 502 Bad Gateway 的典型表现之一，说明问题出在上游服务侧，而非 Nginx 超时配置 —— 即上游进程可能已崩溃、被杀、或自身设置了更短的超时并提前断连 `[2]`。\n\n需优先排查上游服务的存活状态、错误日志及自身超时设置；Nginx 侧的 `proxy_read_ti",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q015",
+      "category": "log_diag",
+      "question": "Pod 事件里显示 OOMKilled、Exit Code 137，如何处理？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "troubleshooting",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 4456,
+      "latency_ms": 4780,
+      "retrieval_top_score": 0.6619,
+      "retrieved_chunk_ids": [
+        "ea4c0bd2-da7c-54f0-a1c2-17d0ae0b7afa",
+        "55b061c8-530c-5064-a45d-3c01d52f9ad9",
+        "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+        "b949c964-69d5-5718-9afe-24107c9a903c"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 1.0,
+      "citation_id_valid": true,
+      "citation_count": 2,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "ea4c0bd2-da7c-54f0-a1c2-17d0ae0b7afa",
+          "doc_title": "k8s-pod-troubleshooting",
+          "score": 0.6619,
+          "source_type": "kb",
+          "status": "live"
+        },
+        {
+          "index": 2,
+          "chunk_id": "55b061c8-530c-5064-a45d-3c01d52f9ad9",
+          "doc_title": "k8s-pod-troubleshooting",
+          "score": 0.6127,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [],
+      "final_text": "- 容器内存超限被内核 OOM Killer 终止，表现为 Exit Code 137 `[1]`。  \n- 检查 `resources.limits.memory` 配置，并确认应用堆内存（如 Java `-Xmx`）设为该 limit 的约 70%，为堆外内存和元空间留余量 `[1]`。  \n- 使用 `kubectl describe pod` 查看 Events 和 Last State，再用 `kubectl logs --previous` 获取上一轮崩溃日志，确认是否真因内存耗尽 `[2]`。  \n- （模型通用知识，无 KB 出处）可结合 `kubectl top pod` 观察实际内存使用趋势，或启用 cgroup memory stats 进一步分析。",
+      "final_text_head": "- 容器内存超限被内核 OOM Killer 终止，表现为 Exit Code 137 `[1]`。  \n- 检查 `resources.limits.memory` 配置，并确认应用堆内存（如 Java `-Xmx`）设为该 limit 的约 70%，为堆外内存和元空间留余量 `[1]`。  \n- 使用 `kubectl describe pod` 查看 Events 和 Last State，",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q016",
+      "category": "log_diag",
+      "question": "Pod 反复重启并打印 Back-off restarting failed container，状态 CrashLoopBackOff，怎么查？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "troubleshooting",
+      "node_path": [
+        "router",
+        "retrieval",
+        "troubleshoot",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 6810,
+      "latency_ms": 7140,
+      "retrieval_top_score": 0.7691,
+      "retrieved_chunk_ids": [
+        "55b061c8-530c-5064-a45d-3c01d52f9ad9",
+        "ea4c0bd2-da7c-54f0-a1c2-17d0ae0b7afa",
+        "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+        "6d4d7f0c-0d49-5f3d-8175-927604c17cf0"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 1.0,
+      "citation_id_valid": true,
+      "citation_count": 3,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "55b061c8-530c-5064-a45d-3c01d52f9ad9",
+          "doc_title": "k8s-pod-troubleshooting",
+          "score": 0.7691,
+          "source_type": "kb",
+          "status": "live"
+        },
+        {
+          "index": 2,
+          "chunk_id": "ea4c0bd2-da7c-54f0-a1c2-17d0ae0b7afa",
+          "doc_title": "k8s-pod-troubleshooting",
+          "score": 0.7645,
+          "source_type": "kb",
+          "status": "live"
+        },
+        {
+          "index": 3,
+          "chunk_id": "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+          "doc_title": "linux-network-troubleshooting",
+          "score": 0.5433,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [
+        "analyze_error_log"
+      ],
+      "final_text": "- 查看 `kubectl describe pod` 的 Events 和 Last State 中的 Exit Code：Exit Code 137 多为 OOMKilled；137、1、143 等需结合日志判断 [1]；  \n- 执行 `kubectl logs --previous` 获取上一轮容器日志，定位启动失败原因 [1]；  \n- 检查 `resources.limits.memory` 是否过低，Java 类应用建议堆内存设为 limit 的 70% 左右，避免堆外内存超限触发 OOMKilled [2]；  \n- 核对 livenessProbe 是否误配为耗时检查，导致未启动完成即被杀；启动慢的应用应改用 startupProbe [2]；  \n- 按标准排查顺序：状态 → Events → 上轮日志 → 资源与探针配置，多数问题前三步可定位 [3]。  \n\n（模型通用知识，无 KB 出处）：若日志为空，可加 `-c <container-name>` 指定容器；若容器无日志输出，需检查应用是否根本未启动。",
+      "final_text_head": "- 查看 `kubectl describe pod` 的 Events 和 Last State 中的 Exit Code：Exit Code 137 多为 OOMKilled；137、1、143 等需结合日志判断 [1]；  \n- 执行 `kubectl logs --previous` 获取上一轮容器日志，定位启动失败原因 [1]；  \n- 检查 `resources.limits.memo",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q017",
+      "category": "log_diag",
+      "question": "日志：connect() failed (110: Connection timed out) while connecting to upstream，问题在哪一层？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "troubleshooting",
+      "node_path": [
+        "router",
+        "retrieval",
+        "troubleshoot",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 9671,
+      "latency_ms": 10015,
+      "retrieval_top_score": 0.7313,
+      "retrieved_chunk_ids": [
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+        "84baa44b-8309-54fe-b699-d3f8eda940cb",
+        "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+        "b949c964-69d5-5718-9afe-24107c9a903c",
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 0.5,
+      "citation_id_valid": true,
+      "citation_count": 3,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+          "doc_title": "nginx-502-upstream",
+          "score": 0.7313,
+          "source_type": "kb",
+          "status": "live"
+        },
+        {
+          "index": 2,
+          "chunk_id": "84baa44b-8309-54fe-b699-d3f8eda940cb",
+          "doc_title": "nginx-502-upstream",
+          "score": 0.6227,
+          "source_type": "kb",
+          "status": "live"
+        },
+        {
+          "index": 3,
+          "chunk_id": "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+          "doc_title": "linux-network-troubleshooting",
+          "score": 0.5722,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [
+        "analyze_error_log"
+      ],
+      "final_text": "该日志 `connect() failed (110: Connection timed out) while connecting to upstream` 表明 Nginx **在建立到 upstream 的 TCP 连接时超时**，问题发生在**网络层（L3/L4）**，而非应用层。\n\n依据知识库：\n- `Connection timed out` 明确对应「报文被丢弃」，常见于防火墙丢包、安全组未放行、路由不可达 —— 属于网络连通性问题 [3]；\n- 此错误发生在 `connect()` 系统调用阶段，即 Nginx 尚未发出 HTTP 请求，也未收到上游任何响应（区别于 `upstream prematurely closed connection` 或 502/504），因此与 `proxy_read_timeout`、上游处理逻辑、HTTP 协议配置等无关 [1][2]。\n\n排查优先级（按 [3] 推荐顺序）：\n1. 检查 Nginx 所在节点到 upstream IP:Port 的**基础连通性**：`telnet <upstream_ip> <port>` 或 `nc -zv <upstream_ip> <port>`；\n2. 验证路由与防火墙：`ip route get <upstream_ip>`、确认安全组/iptables 是否放行目标端口；\n3. 确认 upstream 服务是否监听在 `0.0.0.0`（而非仅 `127.0.0.1`）且进程存活 [3]。\n\n（模型通用知识，无 KB 出处）：若为容器/K8s 环境，还需检查 Service DNS 解析、Endpoint 是否就绪、网络插件连通性。",
+      "final_text_head": "该日志 `connect() failed (110: Connection timed out) while connecting to upstream` 表明 Nginx **在建立到 upstream 的 TCP 连接时超时**，问题发生在**网络层（L3/L4）**，而非应用层。\n\n依据知识库：\n- `Connection timed out` 明确对应「报文被丢弃」，常见于防火墙丢包、",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q018",
+      "category": "log_diag",
+      "question": "Pod 状态 ImagePullBackOff，事件里有 manifest unknown，原因是什么？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 1933,
+      "latency_ms": 2313,
+      "retrieval_top_score": 0.7261,
+      "retrieved_chunk_ids": [
+        "55b061c8-530c-5064-a45d-3c01d52f9ad9",
+        "ea4c0bd2-da7c-54f0-a1c2-17d0ae0b7afa",
+        "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 1.0,
+      "citation_id_valid": true,
+      "citation_count": 1,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "55b061c8-530c-5064-a45d-3c01d52f9ad9",
+          "doc_title": "k8s-pod-troubleshooting",
+          "score": 0.7261,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [],
+      "final_text": "`manifest unknown` 表示镜像名或 tag 在镜像仓库中不存在，即指定的镜像 tag 未被推送或已删除[1]。",
+      "final_text_head": "`manifest unknown` 表示镜像名或 tag 在镜像仓库中不存在，即指定的镜像 tag 未被推送或已删除[1]。",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q019",
+      "category": "no_doc",
+      "question": "我们内部 XYZ 服务的密钥轮换流程是什么？",
+      "should_answer": false,
+      "expected_answer_type": "refusal",
+      "got_answer_type": "refusal",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 1389,
+      "latency_ms": 1735,
+      "retrieval_top_score": 0.4133,
+      "retrieved_chunk_ids": [
+        "b949c964-69d5-5718-9afe-24107c9a903c",
+        "ea4c0bd2-da7c-54f0-a1c2-17d0ae0b7afa"
+      ],
+      "recall_at_5": null,
+      "mrr_at_5": null,
+      "citation_id_valid": true,
+      "citation_count": 0,
+      "citations": [],
+      "tool_calls": [],
+      "final_text": "未在知识库找到关于“XYZ 服务密钥轮换流程”的相关内容。",
+      "final_text_head": "未在知识库找到关于“XYZ 服务密钥轮换流程”的相关内容。",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q020",
+      "category": "no_doc",
+      "question": "Kafka 消费者组 rebalance 频繁触发怎么调优？",
+      "should_answer": false,
+      "expected_answer_type": "refusal",
+      "got_answer_type": "refusal",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 1275,
+      "latency_ms": 1610,
+      "retrieval_top_score": 0.4086,
+      "retrieved_chunk_ids": [
+        "ea4c0bd2-da7c-54f0-a1c2-17d0ae0b7afa",
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8"
+      ],
+      "recall_at_5": null,
+      "mrr_at_5": null,
+      "citation_id_valid": true,
+      "citation_count": 0,
+      "citations": [],
+      "tool_calls": [],
+      "final_text": "未在知识库找到关于 Kafka 消费者组 rebalance 的相关内容。",
+      "final_text_head": "未在知识库找到关于 Kafka 消费者组 rebalance 的相关内容。",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q021",
+      "category": "no_doc",
+      "question": "Redis 集群脑裂怎么处理？",
+      "should_answer": false,
+      "expected_answer_type": "refusal",
+      "got_answer_type": "refusal",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 1231,
+      "latency_ms": 1562,
+      "retrieval_top_score": 0.4707,
+      "retrieved_chunk_ids": [
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+        "ea4c0bd2-da7c-54f0-a1c2-17d0ae0b7afa",
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+        "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+        "84baa44b-8309-54fe-b699-d3f8eda940cb"
+      ],
+      "recall_at_5": null,
+      "mrr_at_5": null,
+      "citation_id_valid": true,
+      "citation_count": 0,
+      "citations": [],
+      "tool_calls": [],
+      "final_text": "未在知识库找到关于 Redis 集群脑裂的处理内容。",
+      "final_text_head": "未在知识库找到关于 Redis 集群脑裂的处理内容。",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q022",
+      "category": "no_doc",
+      "question": "公司差旅报销的审批流程是怎样的？",
+      "should_answer": false,
+      "expected_answer_type": "refusal",
+      "got_answer_type": "refusal",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "refuse"
+      ],
+      "duration_ms": 328,
+      "latency_ms": 672,
+      "retrieval_top_score": 0.0,
+      "retrieved_chunk_ids": [],
+      "recall_at_5": null,
+      "mrr_at_5": null,
+      "citation_id_valid": true,
+      "citation_count": 0,
+      "citations": [],
+      "tool_calls": [],
+      "final_text": "未在知识库中找到与该问题相关的资料（检索到的内容均低于相似度阈值）。\n\n以下是我检索到的最高分片段（分数 0.2744，低于阈值），你可以判断是否是文档缺失：\n> 来源：observability-logging\n> # 线上服务日志规范  ## 1. 日志级别约定  ERROR 只用于需要人工介入的失败，例如请求无法完成、数据不一致、依赖不可用。  WARN 用于可自愈的异常，例如重试成功、降级返回、连接池短暂耗尽。  INFO 记录关键业务动作，每个请求一条汇总即可，不要在每个函数入口都打日志。  DEBUG 默认关闭，只在定位问题时临时开启。  ## 2. 结构化日志字段  推荐字段：时间戳、级别、服务名",
+      "final_text_head": "未在知识库中找到与该问题相关的资料（检索到的内容均低于相似度阈值）。\n\n以下是我检索到的最高分片段（分数 0.2744，低于阈值），你可以判断是否是文档缺失：\n> 来源：observability-logging\n> # 线上服务日志规范  ## 1. 日志级别约定  ERROR 只用于需要人工介入的失败，例如请求无法完成、数据不一致、依赖不可用。  WARN 用于可自愈的异常，例如重试成功、降级",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q023",
+      "category": "no_doc",
+      "question": "怎么申请生产数据库的临时读写权限？",
+      "should_answer": false,
+      "expected_answer_type": "refusal",
+      "got_answer_type": "refusal",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 1524,
+      "latency_ms": 1859,
+      "retrieval_top_score": 0.4704,
+      "retrieved_chunk_ids": [
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+        "6d4d7f0c-0d49-5f3d-8175-927604c17cf0",
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8"
+      ],
+      "recall_at_5": null,
+      "mrr_at_5": null,
+      "citation_id_valid": true,
+      "citation_count": 0,
+      "citations": [],
+      "tool_calls": [],
+      "final_text": "未在知识库找到关于“申请生产数据库临时读写权限”的流程、审批方式或操作规范的相关内容。",
+      "final_text_head": "未在知识库找到关于“申请生产数据库临时读写权限”的流程、审批方式或操作规范的相关内容。",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q024",
+      "category": "no_doc",
+      "question": "Istio 金丝雀发布怎么配置流量比例？",
+      "should_answer": false,
+      "expected_answer_type": "refusal",
+      "got_answer_type": "refusal",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "refuse"
+      ],
+      "duration_ms": 322,
+      "latency_ms": 719,
+      "retrieval_top_score": 0.0,
+      "retrieved_chunk_ids": [],
+      "recall_at_5": null,
+      "mrr_at_5": null,
+      "citation_id_valid": true,
+      "citation_count": 0,
+      "citations": [],
+      "tool_calls": [],
+      "final_text": "未在知识库中找到与该问题相关的资料（检索到的内容均低于相似度阈值）。\n\n以下是我检索到的最高分片段（分数 0.3325，低于阈值），你可以判断是否是文档缺失：\n> 来源：nginx-502-upstream\n> n` 中同时设置 `proxy_http_version 1.1` 与 `proxy_set_header Connection \"\"`，否则长连接不生效。  长连接不生效时，高并发下会出现大量 TIME_WAIT，端口耗尽后表现为偶发 502。  ### proxy_read_timeout  `proxy_read_timeout` 默认 60 秒，指两次读操作之间的间隔，不是整个请求的总耗时",
+      "final_text_head": "未在知识库中找到与该问题相关的资料（检索到的内容均低于相似度阈值）。\n\n以下是我检索到的最高分片段（分数 0.3325，低于阈值），你可以判断是否是文档缺失：\n> 来源：nginx-502-upstream\n> n` 中同时设置 `proxy_http_version 1.1` 与 `proxy_set_header Connection \"\"`，否则长连接不生效。  长连接不生效时，高并发下会出",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q025",
+      "category": "ambiguous",
+      "question": "它起不来了怎么办？",
+      "should_answer": false,
+      "expected_answer_type": "refusal",
+      "got_answer_type": "clarify",
+      "route": "smalltalk",
+      "node_path": [
+        "router",
+        "smalltalk"
+      ],
+      "duration_ms": 6,
+      "latency_ms": 343,
+      "retrieval_top_score": 0.0,
+      "retrieved_chunk_ids": [],
+      "recall_at_5": null,
+      "mrr_at_5": null,
+      "citation_id_valid": true,
+      "citation_count": 0,
+      "citations": [],
+      "tool_calls": [],
+      "final_text": "信息不足，我需要再确认一下才能回答。\n\n请补充以下任一信息：\n1. **具体服务/组件名**（如 Nginx、MySQL、某个 Pod），以及它的报错原文；\n2. **错误日志片段**（含时间戳与 error 行），我可以直接分析；\n3. **端口号与现象**（如「8080 起不来」「3306 连接被拒」），便于判断是否端口冲突。\n\n你指的是哪一种？",
+      "final_text_head": "信息不足，我需要再确认一下才能回答。\n\n请补充以下任一信息：\n1. **具体服务/组件名**（如 Nginx、MySQL、某个 Pod），以及它的报错原文；\n2. **错误日志片段**（含时间戳与 error 行），我可以直接分析；\n3. **端口号与现象**（如「8080 起不来」「3306 连接被拒」），便于判断是否端口冲突。\n\n你指的是哪一种？",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q026",
+      "category": "ambiguous",
+      "question": "这个报错怎么解决？",
+      "should_answer": false,
+      "expected_answer_type": "refusal",
+      "got_answer_type": "clarify",
+      "route": "smalltalk",
+      "node_path": [
+        "router",
+        "smalltalk"
+      ],
+      "duration_ms": 5,
+      "latency_ms": 359,
+      "retrieval_top_score": 0.0,
+      "retrieved_chunk_ids": [],
+      "recall_at_5": null,
+      "mrr_at_5": null,
+      "citation_id_valid": true,
+      "citation_count": 0,
+      "citations": [],
+      "tool_calls": [],
+      "final_text": "信息不足，我需要再确认一下才能回答。\n\n请补充以下任一信息：\n1. **具体服务/组件名**（如 Nginx、MySQL、某个 Pod），以及它的报错原文；\n2. **错误日志片段**（含时间戳与 error 行），我可以直接分析；\n3. **端口号与现象**（如「8080 起不来」「3306 连接被拒」），便于判断是否端口冲突。\n\n你指的是哪一种？",
+      "final_text_head": "信息不足，我需要再确认一下才能回答。\n\n请补充以下任一信息：\n1. **具体服务/组件名**（如 Nginx、MySQL、某个 Pod），以及它的报错原文；\n2. **错误日志片段**（含时间戳与 error 行），我可以直接分析；\n3. **端口号与现象**（如「8080 起不来」「3306 连接被拒」），便于判断是否端口冲突。\n\n你指的是哪一种？",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q027",
+      "category": "ambiguous",
+      "question": "数据库很慢怎么办？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 9143,
+      "latency_ms": 9500,
+      "retrieval_top_score": 0.5838,
+      "retrieved_chunk_ids": [
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+        "6d4d7f0c-0d49-5f3d-8175-927604c17cf0",
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+        "84baa44b-8309-54fe-b699-d3f8eda940cb"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 1.0,
+      "citation_id_valid": true,
+      "citation_count": 2,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+          "doc_title": "mysql-slow-query",
+          "score": 0.5838,
+          "source_type": "kb",
+          "status": "live"
+        },
+        {
+          "index": 2,
+          "chunk_id": "6d4d7f0c-0d49-5f3d-8175-927604c17cf0",
+          "doc_title": "mysql-slow-query",
+          "score": 0.5559,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [],
+      "final_text": "数据库很慢，优先按以下步骤排查（依据知识库）：\n\n1. **确认是否为慢查询**：开启慢查询日志（`slow_query_log=ON`），设阈值如 `long_query_time=0.5`，定位耗时 SQL `[2]`。\n\n2. **分析执行计划**：对慢 SQL 执行 `EXPLAIN`，重点看：\n   - `type=ALL` 或 `type=index` → 全表/全索引扫描，需优化 `[2]`；\n   - `Extra=Using filesort` 或 `Using temporary` → 排序或临时表开销大 `[2]`。\n\n3. **检查索引是否失效**，常见原因包括：\n   - 隐式类型转换（如字符串列用数字查询）；\n   - 在索引列上使用函数（如 `date(created_at) = ...`），应改写为范围查询 `[1][2]`；\n   - `LIKE '%abc'` 前导通配，无法走索引；`LIKE 'abc%'` 可用 `[1]`；\n   - 联合索引未满足最左前缀原则 `[1]`。\n\n4. **检查锁等待**：若报 `Lock wait timeout exceeded`，查 `information_schema.innodb_trx` 定位长事务，长事务必须优先提交或终止 `[1]`。\n\n5. **检查连接数**：若报 `Too many connections`，用 `SHOW PROCESSLIST` 查大量 `Sleep` 连接，确认应用连接池是否未归还 `[1]`。\n\n（模型通用知识，无 KB 出处）：还可检查 CPU、IO、内存等系统资源，以及 InnoDB 缓冲池命中率。",
+      "final_text_head": "数据库很慢，优先按以下步骤排查（依据知识库）：\n\n1. **确认是否为慢查询**：开启慢查询日志（`slow_query_log=ON`），设阈值如 `long_query_time=0.5`，定位耗时 SQL `[2]`。\n\n2. **分析执行计划**：对慢 SQL 执行 `EXPLAIN`，重点看：\n   - `type=ALL` 或 `type=index` → 全表/全索引扫描，需优化 `",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q028",
+      "category": "citation_risk",
+      "question": "proxy_read_timeout 是整个请求的总耗时上限吗？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 3025,
+      "latency_ms": 3390,
+      "retrieval_top_score": 0.6913,
+      "retrieved_chunk_ids": [
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+        "84baa44b-8309-54fe-b699-d3f8eda940cb",
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+        "b949c964-69d5-5718-9afe-24107c9a903c",
+        "bb60c9de-bf65-5565-8e84-cabd6e1670cb"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 1.0,
+      "citation_id_valid": true,
+      "citation_count": 1,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+          "doc_title": "nginx-502-upstream",
+          "score": 0.6913,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [],
+      "final_text": "不是。`proxy_read_timeout` 指的是**两次读操作之间的间隔时间**，而非整个请求的总耗时上限 `[1]`。  \n它默认为 60 秒；若上游响应缓慢（如导出大文件、长轮询），Nginx 可能在等待数据过程中因该间隔超时而主动断开连接，日志中表现为 504 错误 `[1]`。",
+      "final_text_head": "不是。`proxy_read_timeout` 指的是**两次读操作之间的间隔时间**，而非整个请求的总耗时上限 `[1]`。  \n它默认为 60 秒；若上游响应缓慢（如导出大文件、长轮询），Nginx 可能在等待数据过程中因该间隔超时而主动断开连接，日志中表现为 504 错误 `[1]`。",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q029",
+      "category": "citation_risk",
+      "question": "long_query_time 的单位是毫秒吗？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 1366,
+      "latency_ms": 1703,
+      "retrieval_top_score": 0.5963,
+      "retrieved_chunk_ids": [
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+        "6d4d7f0c-0d49-5f3d-8175-927604c17cf0",
+        "84baa44b-8309-54fe-b699-d3f8eda940cb",
+        "b949c964-69d5-5718-9afe-24107c9a903c"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 0.3333333333333333,
+      "citation_id_valid": true,
+      "citation_count": 1,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "6d4d7f0c-0d49-5f3d-8175-927604c17cf0",
+          "doc_title": "mysql-slow-query",
+          "score": 0.5472,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [],
+      "final_text": "不是，`long_query_time` 的单位是秒，支持小数 `[3]`。",
+      "final_text_head": "不是，`long_query_time` 的单位是秒，支持小数 `[3]`。",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "q030",
+      "category": "citation_risk",
+      "question": "CrashLoopBackOff 的重启退避是线性还是指数？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 1771,
+      "latency_ms": 2171,
+      "retrieval_top_score": 0.6853,
+      "retrieved_chunk_ids": [
+        "ea4c0bd2-da7c-54f0-a1c2-17d0ae0b7afa",
+        "55b061c8-530c-5064-a45d-3c01d52f9ad9",
+        "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+        "b949c964-69d5-5718-9afe-24107c9a903c",
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 0.5,
+      "citation_id_valid": true,
+      "citation_count": 1,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "55b061c8-530c-5064-a45d-3c01d52f9ad9",
+          "doc_title": "k8s-pod-troubleshooting",
+          "score": 0.5813,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [],
+      "final_text": "CrashLoopBackOff 的重启退避是指数退避（exponential backoff）[2]。",
+      "final_text_head": "CrashLoopBackOff 的重启退避是指数退避（exponential backoff）[2]。",
+      "error": null,
+      "multiturn_ab": null
+    },
+    {
+      "qid": "m001",
+      "category": "multiturn",
+      "question": "那它怎么配？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 6291,
+      "latency_ms": 6671,
+      "retrieval_top_score": 0.5929,
+      "retrieved_chunk_ids": [
+        "ea4c0bd2-da7c-54f0-a1c2-17d0ae0b7afa",
+        "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+        "55b061c8-530c-5064-a45d-3c01d52f9ad9",
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+        "84baa44b-8309-54fe-b699-d3f8eda940cb"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 1.0,
+      "citation_id_valid": true,
+      "citation_count": 1,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "ea4c0bd2-da7c-54f0-a1c2-17d0ae0b7afa",
+          "doc_title": "k8s-pod-troubleshooting",
+          "score": 0.5929,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [],
+      "final_text": "“它”指代 Pod 的探针（livenessProbe / startupProbe）配置。依据知识库：\n\n- 启动慢的应用**应使用 startupProbe 保护**，避免因 livenessProbe 过早探测失败导致反复重启 `[1]`；  \n- startupProbe 配置需覆盖应用完整启动耗时，建议设置 `failureThreshold × periodSeconds > 启动时间`，且 `initialDelaySeconds` 可设为 0 `[1]`；  \n- livenessProbe 不应承担启动检查职责，其 `initialDelaySeconds` 应大于应用就绪时间，`periodSeconds` 宜 ≥ 10s，避免过频探测 `[1]`；  \n- readinessProbe 可与 livenessProbe 共享探测逻辑，但 `initialDelaySeconds` 通常更小，确保流量只导给已就绪实例 `[1]`。\n\n（模型通用知识，无 KB 出处）：startupProbe 在 v1.16+ 稳定可用，需确认集群版本支持。",
+      "final_text_head": "“它”指代 Pod 的探针（livenessProbe / startupProbe）配置。依据知识库：\n\n- 启动慢的应用**应使用 startupProbe 保护**，避免因 livenessProbe 过早探测失败导致反复重启 `[1]`；  \n- startupProbe 配置需覆盖应用完整启动耗时，建议设置 `failureThreshold × periodSeconds > 启动时间",
+      "error": null,
+      "multiturn_ab": {
+        "recall_a": 1.0,
+        "recall_b": 1.0,
+        "b_triggered_rewrite": false,
+        "retr_a": [
+          "ea4c0bd2-da7c-54f0-a1c2-17d0ae0b7afa",
+          "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+          "55b061c8-530c-5064-a45d-3c01d52f9ad9",
+          "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+          "84baa44b-8309-54fe-b699-d3f8eda940cb"
+        ],
+        "retr_b": [
+          "ea4c0bd2-da7c-54f0-a1c2-17d0ae0b7afa",
+          "55b061c8-530c-5064-a45d-3c01d52f9ad9",
+          "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+          "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+          "84baa44b-8309-54fe-b699-d3f8eda940cb"
+        ]
+      }
+    },
+    {
+      "qid": "m002",
+      "category": "multiturn",
+      "question": "那默认值是多少？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 2505,
+      "latency_ms": 2844,
+      "retrieval_top_score": 0.7657,
+      "retrieved_chunk_ids": [
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+        "84baa44b-8309-54fe-b699-d3f8eda940cb",
+        "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+        "b949c964-69d5-5718-9afe-24107c9a903c"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 1.0,
+      "citation_id_valid": true,
+      "citation_count": 1,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+          "doc_title": "nginx-502-upstream",
+          "score": 0.7657,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [],
+      "final_text": "`proxy_read_timeout` 默认值是 60 秒[1]。  \n该值指 Nginx 与上游服务器**两次读操作之间的间隔**，不是整个请求的总处理时间[1]。",
+      "final_text_head": "`proxy_read_timeout` 默认值是 60 秒[1]。  \n该值指 Nginx 与上游服务器**两次读操作之间的间隔**，不是整个请求的总处理时间[1]。",
+      "error": null,
+      "multiturn_ab": {
+        "recall_a": 1.0,
+        "recall_b": 1.0,
+        "b_triggered_rewrite": false,
+        "retr_a": [
+          "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+          "84baa44b-8309-54fe-b699-d3f8eda940cb",
+          "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+          "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+          "b949c964-69d5-5718-9afe-24107c9a903c"
+        ],
+        "retr_b": [
+          "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+          "84baa44b-8309-54fe-b699-d3f8eda940cb",
+          "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+          "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+          "b949c964-69d5-5718-9afe-24107c9a903c"
+        ]
+      }
+    },
+    {
+      "qid": "m003",
+      "category": "multiturn",
+      "question": "那索引为什么会失效？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 5792,
+      "latency_ms": 6140,
+      "retrieval_top_score": 0.6063,
+      "retrieved_chunk_ids": [
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+        "6d4d7f0c-0d49-5f3d-8175-927604c17cf0",
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+        "84baa44b-8309-54fe-b699-d3f8eda940cb"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 1.0,
+      "citation_id_valid": true,
+      "citation_count": 2,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+          "doc_title": "mysql-slow-query",
+          "score": 0.6063,
+          "source_type": "kb",
+          "status": "live"
+        },
+        {
+          "index": 2,
+          "chunk_id": "6d4d7f0c-0d49-5f3d-8175-927604c17cf0",
+          "doc_title": "mysql-slow-query",
+          "score": 0.5469,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [],
+      "final_text": "索引失效的常见原因如下（均直接依据知识库）：\n\n- 第一类是隐式类型转换，例如字符串列用数字查询，索引会失效[1][2]；  \n- 第二类是在索引列上使用函数，例如 `where date(created_at) = '2026-01-01'`，应改写为范围查询[1][2]；  \n- 第三类是前导通配的模糊匹配，`like '%abc'` 无法使用索引，而 `like 'abc%'` 可以[1]；  \n- 第四类是联合索引未遵循最左前缀原则，查询条件缺少最左列时索引无法使用[1]。  \n\n（模型通用知识，无 KB 出处）：其他可能原因包括索引列参与运算、OR 条件中部分字段无索引、统计信息过期等。",
+      "final_text_head": "索引失效的常见原因如下（均直接依据知识库）：\n\n- 第一类是隐式类型转换，例如字符串列用数字查询，索引会失效[1][2]；  \n- 第二类是在索引列上使用函数，例如 `where date(created_at) = '2026-01-01'`，应改写为范围查询[1][2]；  \n- 第三类是前导通配的模糊匹配，`like '%abc'` 无法使用索引，而 `like 'abc%'` 可以[1]；",
+      "error": null,
+      "multiturn_ab": {
+        "recall_a": 1.0,
+        "recall_b": 1.0,
+        "b_triggered_rewrite": false,
+        "retr_a": [
+          "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+          "6d4d7f0c-0d49-5f3d-8175-927604c17cf0",
+          "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+          "84baa44b-8309-54fe-b699-d3f8eda940cb"
+        ],
+        "retr_b": [
+          "6d4d7f0c-0d49-5f3d-8175-927604c17cf0",
+          "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+          "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+          "84baa44b-8309-54fe-b699-d3f8eda940cb",
+          "bb60c9de-bf65-5565-8e84-cabd6e1670cb"
+        ]
+      }
+    },
+    {
+      "qid": "m004",
+      "category": "multiturn",
+      "question": "那超时呢？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 5761,
+      "latency_ms": 6109,
+      "retrieval_top_score": 0.6583,
+      "retrieved_chunk_ids": [
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+        "84baa44b-8309-54fe-b699-d3f8eda940cb",
+        "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+        "6d4d7f0c-0d49-5f3d-8175-927604c17cf0"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 0.25,
+      "citation_id_valid": true,
+      "citation_count": 4,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+          "doc_title": "nginx-502-upstream",
+          "score": 0.6583,
+          "source_type": "kb",
+          "status": "live"
+        },
+        {
+          "index": 2,
+          "chunk_id": "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+          "doc_title": "mysql-slow-query",
+          "score": 0.5862,
+          "source_type": "kb",
+          "status": "live"
+        },
+        {
+          "index": 3,
+          "chunk_id": "84baa44b-8309-54fe-b699-d3f8eda940cb",
+          "doc_title": "nginx-502-upstream",
+          "score": 0.5611,
+          "source_type": "kb",
+          "status": "live"
+        },
+        {
+          "index": 4,
+          "chunk_id": "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+          "doc_title": "linux-network-troubleshooting",
+          "score": 0.5607,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [],
+      "final_text": "“超时”需结合上下文区分类型：\n\n- 若指 `Connection timed out`：表示报文被丢弃，常见于防火墙丢包、云安全组未放行、路由不可达 `[4]`。  \n- 若指 Nginx 的 `504 Gateway Timeout`：表示 Nginx 等待上游响应超时，主因是 `proxy_read_timeout` 设置过小（默认 60 秒），或上游处理过慢；该值控制**两次读操作间隔**，非总耗时 `[1][3]`。  \n- 若指 MySQL 的 `Lock wait timeout exceeded`：表示事务等锁超时（默认 50 秒），需查阻塞源事务及长事务 `[2]`。\n\n（模型通用知识，无 KB 出处）：`curl -v`、`tcpdump`、`strace` 可辅助定位具体超时环节。",
+      "final_text_head": "“超时”需结合上下文区分类型：\n\n- 若指 `Connection timed out`：表示报文被丢弃，常见于防火墙丢包、云安全组未放行、路由不可达 `[4]`。  \n- 若指 Nginx 的 `504 Gateway Timeout`：表示 Nginx 等待上游响应超时，主因是 `proxy_read_timeout` 设置过小（默认 60 秒），或上游处理过慢；该值控制**两次读操作间隔**",
+      "error": null,
+      "multiturn_ab": {
+        "recall_a": 1.0,
+        "recall_b": 1.0,
+        "b_triggered_rewrite": false,
+        "retr_a": [
+          "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+          "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+          "84baa44b-8309-54fe-b699-d3f8eda940cb",
+          "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+          "6d4d7f0c-0d49-5f3d-8175-927604c17cf0"
+        ],
+        "retr_b": [
+          "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+          "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+          "bb60c9de-bf65-5565-8e84-cabd6e1670cb",
+          "84baa44b-8309-54fe-b699-d3f8eda940cb",
+          "6d4d7f0c-0d49-5f3d-8175-927604c17cf0"
+        ]
+      }
+    },
+    {
+      "qid": "m005",
+      "category": "multiturn",
+      "question": "那它要带哪些字段？",
+      "should_answer": true,
+      "expected_answer_type": "answered",
+      "got_answer_type": "answered",
+      "route": "kb_qa",
+      "node_path": [
+        "router",
+        "retrieval",
+        "evidence",
+        "final"
+      ],
+      "duration_ms": 4630,
+      "latency_ms": 5000,
+      "retrieval_top_score": 0.6961,
+      "retrieved_chunk_ids": [
+        "b949c964-69d5-5718-9afe-24107c9a903c",
+        "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+        "6d4d7f0c-0d49-5f3d-8175-927604c17cf0",
+        "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+        "bb60c9de-bf65-5565-8e84-cabd6e1670cb"
+      ],
+      "recall_at_5": 1.0,
+      "mrr_at_5": 1.0,
+      "citation_id_valid": true,
+      "citation_count": 1,
+      "citations": [
+        {
+          "index": 1,
+          "chunk_id": "b949c964-69d5-5718-9afe-24107c9a903c",
+          "doc_title": "observability-logging",
+          "score": 0.6961,
+          "source_type": "kb",
+          "status": "live"
+        }
+      ],
+      "tool_calls": [],
+      "final_text": "它指代的是**结构化日志**，依据《线上服务日志规范》[1]，必须包含以下字段：\n\n- 时间戳  \n- 级别  \n- 服务名  \n- 实例标识  \n- `request_id`  \n- 错误码  \n- 耗时（毫秒整数）  \n- 结果状态  \n\n其中：  \n- `request_id` 必须由网关生成并全链路透传 `[1]`；  \n- 错误码须为有限枚举，禁止用异常堆栈替代 `[1]`；  \n- 耗时统一用毫秒整数，避免混用单位 `[1]`。",
+      "final_text_head": "它指代的是**结构化日志**，依据《线上服务日志规范》[1]，必须包含以下字段：\n\n- 时间戳  \n- 级别  \n- 服务名  \n- 实例标识  \n- `request_id`  \n- 错误码  \n- 耗时（毫秒整数）  \n- 结果状态  \n\n其中：  \n- `request_id` 必须由网关生成并全链路透传 `[1]`；  \n- 错误码须为有限枚举，禁止用异常堆栈替代 `[1]`；  \n- 耗",
+      "error": null,
+      "multiturn_ab": {
+        "recall_a": 1.0,
+        "recall_b": 1.0,
+        "b_triggered_rewrite": false,
+        "retr_a": [
+          "b949c964-69d5-5718-9afe-24107c9a903c",
+          "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+          "6d4d7f0c-0d49-5f3d-8175-927604c17cf0",
+          "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+          "bb60c9de-bf65-5565-8e84-cabd6e1670cb"
+        ],
+        "retr_b": [
+          "b949c964-69d5-5718-9afe-24107c9a903c",
+          "6d4d7f0c-0d49-5f3d-8175-927604c17cf0",
+          "bfeb61fe-f8c9-5cdd-98c7-c792e2c3d69b",
+          "86dd2e5a-140f-5ff4-8422-4c701b55f2e8",
+          "bb60c9de-bf65-5565-8e84-cabd6e1670cb"
+        ]
+      }
+    }
+  ]
+}

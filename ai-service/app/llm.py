@@ -59,7 +59,10 @@ def make_llm_call(cfg: dict):
             # B2 修正：final 也降到 0，减少"漏标 `[n]`"的随机抖动
             # （answer_type 已按语义判定，不再依赖引用；但引用稳定性仍影响 A3b）
             "temperature": 0.0 if role in ("router", "checker", "rewrite", "final") else 0.2,
-            "max_tokens": 256 if role in ("router", "checker", "rewrite") else cfg.get("answer_max_tokens", 1024),
+            # 方案 A（S9 实测）：final 的 max_tokens 从 1024 收到 512 —— 中文 400 字约 600 token，
+            # 512 足以容纳 prompt 要求的长度，同时给"模型失控铺开"设一道硬上限。
+            # **注意**：这是角色级配置，不是把评测阈值改掉（阈值仍是 8s）。
+            "max_tokens": 256 if role in ("router", "checker", "rewrite") else cfg.get("answer_max_tokens", 512),
             "stream": on_delta is not None,
         }
         timeout = float(cfg.get("llm_timeout_seconds", 30))

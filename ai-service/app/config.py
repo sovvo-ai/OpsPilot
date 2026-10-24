@@ -30,5 +30,5 @@ def get_config() -> dict:
         "hnsw_ef_search": int(os.getenv("HNSW_EF_SEARCH", "100")),
         # 生成参数
         "llm_timeout_seconds": float(os.getenv("LLM_TIMEOUT_SECONDS", "30")),
-        "answer_max_tokens": int(os.getenv("ANSWER_MAX_TOKENS", "1024")),
+        "answer_max_tokens": int(os.getenv("ANSWER_MAX_TOKENS", "512")),  # 方案 A：原 1024
     }

@@ -1,11 +1,11 @@
-"""回填 A3b 人工复核判定 → 出评测报告 v2（补齐两个 NOT RUN）。
+"""回填 A3b 人工复核判定 → 出评测报告 `<version>`（补齐两个 NOT RUN）。
 
 输入：
   - 评测报告 JSON（`--report`，如 `evals/reports/2026-10-24T0115.json`）
   - 复核清单 Markdown（`--review`，`docs/testing/a3b_user_review.md`）
 
 产出：
-  - `<report>_v2.json` / `<report>_v2.md`
+  - `<report>_<version>.json` / `<report>_<version>.md`（`--version` 指定，默认 `v2`）
 
 回填内容（对齐 `rag-eval-spec.md` §4.1 与清单尾部的 5 步）：
   1. `a3b_reviews` 里 `user_recheck=true` 的条目：`judge="user"`、
@@ -18,10 +18,14 @@
 本轮 m001 的"不支撑"性质是**引用越界**（模型把通用知识挂在 KB 引用号下），
 按失败项如实计入 —— 不因"看起来答得不错"而豁免。
 
+**残留节**（`--residual`）：把复核清单里"必须同时写进报告"的残留事实原样带进报告，
+避免"5/5 支撑"被读成"已根治"。
+
 用法：
     ai-service/.venv/Scripts/python.exe scripts/apply_user_review.py \
-        --report ai-service/evals/reports/2026-10-24T0115.json \
-        --review docs/testing/a3b_user_review.md
+        --report ai-service/evals/reports/2026-10-24T1405.json \
+        --review docs/testing/a3b_user_review_v3.md \
+        --version v3-final --residual docs/testing/v3_residual_notes.md
 """
 
 from __future__ import annotations
@@ -90,6 +94,13 @@ def main() -> int:
     ap.add_argument("--report", required=True)
     ap.add_argument("--review", required=True)
     ap.add_argument("--judged-at", default=str(date.today()))
+    ap.add_argument("--version", default="v2", help="报告版本号，用于输出文件名与标题")
+    ap.add_argument("--residual", default=None,
+                    help="残留事实 Markdown（原样写进报告的『残留与已知限制』节）")
+    ap.add_argument("--calibration-finding", default=None,
+                    help="本轮人工复核的实际发现（默认按 unsupported 自动生成）")
+    ap.add_argument("--calibration-resolution", default=None,
+                    help="本轮处置说明")
     args = ap.parse_args()
 
     rep_path = Path(args.report)
@@ -154,27 +165,24 @@ def main() -> int:
         "unsupported 项如实计失败，不豁免"
     )
 
-    # --- 4. 校准日志 ---
+    # --- 4. 校准日志（按**本轮实际**生成，不继承上一轮的故事）---
     unsupported = [a["qid"] for a in mixed_items if a["verdict"] == "unsupported"]
+    finding = args.calibration_finding or (
+        f"人工复核 {len(user_items)} 条抽检，{len(user_items) - len(unsupported)} 条判『支撑』"
+        + (f"，{len(unsupported)} 条判『不支撑』（{unsupported}）" if unsupported else "，无『不支撑』")
+    )
     rep.setdefault("calibration_log", []).append({
         "at": args.judged_at,
-        "by": "外部审查代判 + 用户追认（见 docs/testing/a3b_user_review.md 头部声明）",
-        "action": "A3b 人工复核回填，补齐 citation_support_rate / task_success_rate",
-        "finding": (
-            f"人工复核抓到 {len(unsupported)} 条**引用越界**（{unsupported}）："
-            "模型把片段之外的通用知识挂在 KB 引用号下。"
-            "机器判定的引用 ID 有效率与检索层指标均**抓不到**这类问题。"
+        "by": f"外部审查代判 + 用户委托确认（清单 `{Path(args.review).name}` 头部声明）",
+        "action": f"A3b 人工复核回填（{args.version}），补齐 citation_support_rate / task_success_rate",
+        "finding": finding,
+        "resolution": args.calibration_resolution or (
+            "不改数据集、不调阈值。**支持率只覆盖『被抽中的结论句』**，"
+            "不等于『每条答案每句都干净』—— 检测器方差与未根治项见报告『残留与已知限制』节。"
         ),
-        "resolution": "不改数据集、不调阈值；列为 S9 前 prompt 紧缩修复项",
-        "action_item": {
-            "id": "S9-PRE-1",
-            "scope": "final / troubleshoot prompt",
-            "change": (
-                "只复述片段内的操作建议；超出片段的知识**不带引用号**，"
-                "或显式标注『模型通用知识，无 KB 出处』"
-            ),
-            "due": "S9 开工前",
-        },
+        "scope_note": (
+            "本轮支持率口径：5 条人工抽检（citation_risk×2 + multiturn×1 + kb_qa 长答案×2）。"
+        ),
     })
 
     # --- 5. meta 标注 ---
@@ -185,20 +193,26 @@ def main() -> int:
         "reviewed_count": len(user_items),
         "verdicts": {a["qid"]: a["verdict"] for a in user_items if a.get("verdict")},
     }
-    rep["meta"]["report_version"] = "v2"
+    rep["meta"]["report_version"] = args.version
+
+    # --- 6. 残留与已知限制（原样带进报告，避免"5/5"被读成"已根治"）---
+    if args.residual:
+        residual_text = Path(args.residual).read_text(encoding="utf-8")
+        rep["residual_and_known_limits_md"] = residual_text
+        print(f"残留节已并入（{len(residual_text)} 字符）")
 
     # --- 落盘 ---
-    out_json = rep_path.with_name(rep_path.stem + "_v2.json")
+    out_json = rep_path.with_name(rep_path.stem + f"_{args.version}.json")
     out_json.write_text(json.dumps(rep, ensure_ascii=False, indent=2), encoding="utf-8")
 
     # Markdown 摘要：从 v1 的 md 改写指标表（避免重复实现渲染器）
     v1_md = rep_path.with_suffix(".md")
-    md = render_md_v2(rep, v1_md)
+    md = render_md_v2(rep, v1_md, version=args.version)
     out_md = out_json.with_suffix(".md")
     out_md.write_text(md, encoding="utf-8")
 
-    print(f"\n报告 v2: {out_json}")
-    print(f"摘要 v2: {out_md}")
+    print(f"\n报告 {args.version}: {out_json}")
+    print(f"摘要 {args.version}: {out_md}")
     print(f"\n三口径支持率：")
     for k, v in rep["metrics_by_judge"].items():
         print(f"  {k}: {v['citation_support_rate']}（{v['count']} 条）")
@@ -207,12 +221,16 @@ def main() -> int:
     return 0
 
 
-def render_md_v2(rep: dict, v1_md: Path) -> str:
-    """基于 v1 的 Markdown 改写指标与汇总段落（保持其余结构）。"""
+def render_md_v2(rep: dict, v1_md: Path, version: str = "v2") -> str:
+    """基于 v1 的 Markdown 改写指标与汇总段落（保持其余结构）。
+
+    报告的**失败项节按本轮实际生成**（不再硬编码"S8 的 m001"故事）；
+    若提供了残留节（`residual_and_known_limits_md`），追加为独立章节。
+    """
     m = rep["metrics"]
     meta = rep["meta"]
     lines: list[str] = []
-    lines.append("# OpsPilot 评测报告（v2 · 含 A3b 人工复核回填）")
+    lines.append(f"# OpsPilot 评测报告（{version} · 含 A3b 人工复核回填）")
     lines.append("")
     lines.append(f"- git commit: `{meta['git_commit']}`")
     lines.append(f"- 开始时间: {meta['started_at']}  用时: {meta['duration_s']}s")
@@ -241,7 +259,7 @@ def render_md_v2(rep: dict, v1_md: Path) -> str:
         return "✅" if (v <= thr if lower_better else v >= thr) else "❌"
 
     T = rep["metrics"]["thresholds"]
-    lines.append("## 1. 指标（v2：两个 `NOT RUN` 已补齐）")
+    lines.append(f"## 1. 指标（{version}：两个 `NOT RUN` 已补齐）")
     lines.append("")
     lines.append("| 指标 | 值 | 阈值 | 达标 |")
     lines.append("|---|---|---|---|")
@@ -280,22 +298,28 @@ def render_md_v2(rep: dict, v1_md: Path) -> str:
                      f"{fmt(v['task_success_rate'])} |")
     lines.append("")
 
-    # 不支撑明细
+    # 不支撑明细（按本轮实际生成）
     un = [a for a in rep["a3b_reviews"] if a.get("verdict") == "unsupported"]
     if un:
         lines.append("### ⚠️ 人工复核发现的失败项（**这条最有价值**）")
         lines.append("")
-        lines.append("| 题号 | 类别 | 性质 | 说明 |")
-        lines.append("|---|---|---|---|")
+        lines.append("| 题号 | 类别 | 说明 |")
+        lines.append("|---|---|---|")
         for a in un:
-            lines.append(f"| `{a['qid']}` | {a.get('category')} | **引用越界** | "
-                         f"模型把片段之外的通用知识挂在 KB 引用号下；"
-                         f"引用 ID 有效（机器判过），但**内容不支撑**该结论 |")
+            lines.append(f"| `{a['qid']}` | {a.get('category')} | "
+                         f"片段不足以支撑该结论（引用 ID 有效，机器判过，但**内容不支撑**） |")
         lines.append("")
         lines.append("> 这条证明了两件事：")
         lines.append("> ① 机器判定的「引用 ID 有效率 100%」**不足以**保证引用可用 —— "
                      "它只验证 ID 存在，不验证语义支撑；")
         lines.append("> ② A3b 这道人工工序**不是走过场** —— 若只看自动指标，这个问题会被完全漏掉。")
+        lines.append("")
+    else:
+        lines.append("### 本轮人工抽检：5/5 判「支撑」")
+        lines.append("")
+        lines.append("> ⚠️ **但这不是「引用越界已根治」** —— 支持率只覆盖「被抽中的结论句」，"
+                     "不等于「每条答案每句都干净」。**未根治项与检测器方差见下方"
+                     "『残留与已知限制』章节**。")
         lines.append("")
 
     lines.append("## 3. 校准日志")
@@ -308,7 +332,12 @@ def render_md_v2(rep: dict, v1_md: Path) -> str:
         if ai:
             lines.append(f"  - 行动项 `{ai['id']}`（{ai['scope']}，{ai['due']}）：{ai['change']}")
     lines.append("")
-    lines.append("## 4. 逐题结果")
+    if rep.get("residual_and_known_limits_md"):
+        lines.append("## 4. 残留与已知限制（原样保留，勿删）")
+        lines.append("")
+        lines.append(rep["residual_and_known_limits_md"].strip())
+        lines.append("")
+    lines.append("## 5. 逐题结果")
     lines.append("")
     lines.append("| 题号 | 类别 | 期望 | 实际 | Recall@5 | MRR@5 | 引用 | 延迟ms | 工具 |")
     lines.append("|---|---|---|---|---|---|---|---|---|")
