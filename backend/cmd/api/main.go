@@ -17,6 +17,7 @@ import (
 	"opspilot/backend/internal/handlers"
 	"opspilot/backend/internal/ingest"
 	"opspilot/backend/internal/middleware"
+	"opspilot/backend/internal/web"
 )
 
 func main() {
@@ -73,6 +74,12 @@ func main() {
 		version, buildinfo.Commit, buildinfo.BuildTime, gin.Mode())
 	auth := handlers.NewAuthHandler(cfg)
 	handlers.RegisterAPIRoutes(r, health, auth)
+
+	// S9：前端单页（Go embed 托管，无额外组件）。
+	// 必须在业务路由之后注册 —— 它的 NoRoute 兜底会接管未匹配路径。
+	if err := web.Register(r); err != nil {
+		log.Fatalf("前端静态资源挂载失败: %v", err)
+	}
 
 	var dispatcher *ingest.Dispatcher
 	if database != nil {

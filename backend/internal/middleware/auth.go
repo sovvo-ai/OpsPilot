@@ -31,6 +31,21 @@ func JWTAuth(secret string) gin.HandlerFunc {
 			return
 		}
 
+		// S9：前端静态资源与单页路由免鉴权。
+		//
+		// 为什么安全：静态资源**不含任何用户数据**（HTML/CSS/JS 是公开产物），
+		// 真正需要保护的是 `/api/*`（业务数据）与 `/internal/*`（内部接口），
+		// 它们仍然要求 JWT。前端拿到页面后再用 token 调 API。
+		//
+		// 判据：**GET/HEAD 且路径不在 `/api/` 与 `/internal/` 下** → 放行。
+		// 这样 `/`、`/style.css`、`/app.js`、以及将来任何静态资源都不必逐个登记。
+		if (c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead) &&
+			!strings.HasPrefix(c.Request.URL.Path, "/api/") &&
+			!strings.HasPrefix(c.Request.URL.Path, "/internal/") {
+			c.Next()
+			return
+		}
+
 		tokenString := extractBearer(c.GetHeader("Authorization"))
 		if tokenString == "" {
 			AbortWithError(c, http.StatusUnauthorized, "UNAUTHORIZED", "缺少鉴权令牌")

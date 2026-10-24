@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpsPilot · 运维知识库问答</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<!-- ═══ 顶栏 ═══ -->
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-dot" aria-hidden="true"></span>
+    <span class="brand-name">OpsPilot</span>
+    <span class="brand-sub">运维知识库问答</span>
+  </div>
+  <div class="topbar-right">
+    <span id="conn-badge" class="badge badge-muted" role="status">就绪</span>
+  </div>
+</header>
+
+<!-- ═══ 三栏主体（UI-10：同一基准栅格，栅格单位 --gap）═══ -->
+<main class="layout">
+
+  <!-- ── 左栏 240px：会话 + 文档 ── -->
+  <aside class="col-left" aria-label="会话与文档">
+    <section class="panel">
+      <div class="panel-head">
+        <h2 class="panel-title">会话</h2>
+        <button id="btn-new-session" class="btn btn-ghost btn-sm" type="button">+ 新建</button>
+      </div>
+      <div id="session-list" class="list" role="listbox" aria-label="会话列表"></div>
+      <!-- UI-07 空态 -->
+      <p id="session-empty" class="empty-hint">
+        还没有会话。<br>点击「+ 新建」开始第一次提问。
+      </p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2 class="panel-title">文档</h2>
+        <button id="btn-upload" class="btn btn-ghost btn-sm" type="button">+ 上传</button>
+      </div>
+      <input id="file-input" type="file" accept=".md,.txt" multiple hidden>
+
+      <!-- UI-01：拖拽区 -->
+      <div id="dropzone" class="dropzone" tabindex="0"
+           role="button" aria-label="拖拽或点击上传 .md / .txt 文件">
+        <span class="dropzone-text">拖拽 .md / .txt 到此处</span>
+        <span class="dropzone-sub">或点击选择文件</span>
+      </div>
+      <div id="upload-progress" class="upload-progress" hidden>
+        <span id="upload-progress-text"></span>
+      </div>
+
+      <div id="doc-list" class="list" role="listbox" aria-label="文档列表"></div>
+      <!-- UI-07 空态 -->
+      <p id="doc-empty" class="empty-hint">
+        知识库还是空的。<br>上传 .md 或 .txt 文档后即可提问。
+      </p>
+    </section>
+  </aside>
+
+  <!-- ── 中栏：消息流 + 输入 ── -->
+  <section class="col-mid" aria-label="对话">
+    <div id="message-list" class="messages" aria-live="polite"></div>
+
+    <!-- UI-07 空态 -->
+    <div id="chat-empty" class="chat-empty">
+      <p class="chat-empty-title">开始提问</p>
+      <p class="chat-empty-sub">例如：Nginx 的 502 和 504 分别代表什么？</p>
+    </div>
+
+    <form id="ask-form" class="composer">
+      <div class="composer-row">
+        <textarea id="question" rows="1" placeholder="输入问题，Enter 发送 / Shift+Enter 换行"
+                  aria-label="问题输入框"></textarea>
+        <button id="btn-send" class="btn btn-primary" type="submit">发送</button>
+      </div>
+      <div class="composer-row composer-row-sub">
+        <label class="toggle">
+          <input id="chk-attach" type="checkbox"> 附日志（可选）
+        </label>
+        <button id="btn-clear-attach" class="btn btn-ghost btn-sm" type="button" hidden>清除</button>
+      </div>
+      <textarea id="attach-log" class="attach-log" rows="3" hidden
+                placeholder="粘贴错误日志（≤8KB）" aria-label="附日志内容"></textarea>
+    </form>
+  </section>
+
+  <!-- ── 右栏：抽屉（引用详情 / 执行轨迹）── -->
+  <aside id="drawer" class="col-right" aria-label="详情抽屉" hidden>
+    <div class="panel-head">
+      <h2 id="drawer-title" class="panel-title">详情</h2>
+      <button id="btn-close-drawer" class="btn btn-ghost btn-sm" type="button"
+              aria-label="关闭抽屉">✕</button>
+    </div>
+    <div id="drawer-body" class="drawer-body"></div>
+  </aside>
+
+</main>
+
+<!-- 全局 toast（UI-08：错误提示带 request_id） -->
+<div id="toast" class="toast" role="alert" hidden></div>
+
+<script src="/app.js"></script>
+</body>
+</html>
