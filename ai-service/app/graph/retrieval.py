@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import time
+from typing import Any
 
 from app.graph.budget import PRIORITY_REWRITE, Budget
 from app.retrieval import RetrievalError, retrieve, top_score
@@ -108,9 +109,16 @@ def retrieval_node(
     query = rewritten or question
 
     # --- 检索（纯代码，零模型调用）---
+    # `probe=True` 额外取回"阈值之下的最高分样本"，供 refuse 按 PRD §7.4 展示
+    # （"列出最高分片段及分数，让用户判断是不是文档缺失"）。
+    # 测试注入的 retrieve_fn 可能不支持 probe → 回退两参调用。
     fn = retrieve_fn or retrieve
+    probe_chunk: dict[str, Any] | None = None
     try:
-        chunks = fn(owner_id, query, cfg)
+        try:
+            chunks, probe_chunk = fn(owner_id, query, cfg, probe=True)  # type: ignore[misc]
+        except TypeError:
+            chunks = fn(owner_id, query, cfg)  # type: ignore[misc]
     except RetrievalError as exc:
         logger.warning("检索失败: %s", exc.message)
         degraded = True
@@ -134,6 +142,8 @@ def retrieval_node(
     return {
         "rewritten_query": rewritten,
         "chunks": chunks,
+        # 阈值下的最高分（无则 None）—— 只在拒答时展示，不参与作答/引用
+        "probe_chunk": probe_chunk,
         "degraded": degraded,
         "degrade_reasons": reasons,
     }

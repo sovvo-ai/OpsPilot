@@ -161,9 +161,16 @@ cd ai-service
 
 ## 演示
 
+- **浏览器版演示（推荐）**：[`docs/demo/demo.gif`](docs/demo/demo.gif) —— 真前端录屏（2.6MB），
+  覆盖上传 → 提问带引用 → 点角标看片段 → 拒答（列出最高分片段）→ 澄清（不猜）→ 轨迹展开
+- 终端 / API 版演示：[`docs/demo/demo-api.gif`](docs/demo/demo-api.gif) —— 同一套后端，
+  命令行走完整链路（含端口冲突工具调用）
 - 3 分钟分镜脚本：[`docs/demo/demo-script.md`](docs/demo/demo-script.md)
-- 终端实录：[`docs/demo/demo-api.gif`](docs/demo/demo-api.gif)
 - 求职 pitch：[`docs/demo/pitch.md`](docs/demo/pitch.md)
+
+> 两个 GIF 均为**真实录制**（`scripts/s9_demo_record.py` / `scripts/demo_record.py`），
+> 仅对空闲等待做倍速压缩，未剪辑失败重试。页面文本证据见
+> [`docs/testing/s9-ui-smoke.md`](docs/testing/s9-ui-smoke.md)（38/38 冒烟）。
 
 ## 文档
 

@@ -63,6 +63,13 @@ class State(TypedDict, total=False):
     # --- retrieval ---
     rewritten_query: str | None
     chunks: list[RetrievedChunk]
+    # 阈值之下的最高分片段（PRD §7.4：拒答时列出，帮用户判断是否文档缺失）。
+    #
+    # ⚠️ **必须声明在 State 里**：`State` 是 TypedDict，LangGraph 按 schema 过滤
+    # 节点返回值 —— 未声明的键会被**静默丢弃**（实测：retrieval 节点 return 了
+    # `probe_chunk`，refuse 却永远拿到 None，拒答于是退化成"未找到"）。
+    # 与 D2（`retrieval_top_score` 未落库）、`Citation.Index` 未声明同属一类。
+    probe_chunk: RetrievedChunk | None
 
     # --- troubleshoot ---
     tool_calls: list[ToolCallRecord]

@@ -289,6 +289,129 @@ class TestEvidenceRuleLayer:
         assert "deadbeef" not in str(ids)
 
 
+class TestStateSchemaCompleteness:
+    """**State 必须声明节点会返回的每一个键**（否则被 LangGraph 静默丢弃）。
+
+    S9 实测教训：`retrieval_node` return 了 `probe_chunk`，但当时只把它写进了
+    `RetrievedChunk`，**没写进 `State`** —— TypedDict 按 schema 过滤节点返回值，
+    于是 refuse 永远拿到 `None`，PRD §7.4 的"列出最高分片段"退化成"未找到"。
+
+    这是"字段在写路径存在、传输路径丢失"的**第三次**（前两次：`retrieval_top_score`
+    未落库、`Citation.Index` 未声明）。所以立一条**机制级**回归。
+    """
+
+    def test_every_returned_key_is_declared_in_state(self):
+        import inspect
+
+        from app.graph import state as st
+
+        declared = set(st.State.__annotations__)
+        # 节点允许返回的"内部键"白名单（以 _ 开头的是内部标记，已在 State 声明）
+        required = {
+            "rewritten_query", "chunks", "probe_chunk",      # retrieval
+            "tool_calls", "draft_answer",                    # troubleshoot
+            "citations", "final_text", "answer_type",        # final / refuse
+            "route", "route_conf",                           # router
+            "degraded", "degrade_reasons",                   # 通用
+        }
+        missing = required - declared
+        assert not missing, f"这些键节点会 return 但 State 未声明（会被静默丢弃）: {sorted(missing)}"
+
+    def test_retrieval_node_return_keys_are_declared(self):
+        """直接检查 retrieval 节点的返回键集合 ⊆ State。"""
+        from app.graph import state as st
+        from app.graph.retrieval import retrieval_node
+        from app.graph.budget import Budget
+
+        out = retrieval_node(
+            {"question": "q", "owner_id": "u", "route": "kb_qa", "turn_index": 0},
+            cfg={"retrieval_top_k": 5, "retrieval_min_score": 0.35, "hnsw_ef_search": 100},
+            budget=Budget(),
+            retrieve_fn=lambda o, q, c: [],
+        )
+        undeclared = set(out) - set(st.State.__annotations__)
+        assert not undeclared, f"retrieval_node 返回了未声明键: {sorted(undeclared)}"
+
+
+class TestRefuseListsProbeChunk:
+    """PRD §7.4 硬要求：拒答必须列出"**最高分片段及分数**"。
+
+    ⚠️ 为什么需要这组用例（S9 实测教训）：
+    `test_refuse_path_when_low_score` 传的是**已经过阈值过滤的低分 chunks**
+    （`retrieve_fn` 直接给 `[dict(CHUNK, score=0.10)]`）—— 它验证的是 refuse 节点
+    的**渲染逻辑**，却绕过了真实装配：真实 `retrieve()` 在低分时返回**空列表**，
+    refuse 于是走 `not chunks` 分支、拿不到任何片段。
+
+    实测：`公司差旅报销流程是什么？` 走 `chunks=0` → 输出干巴巴的"未找到"，
+    §7.4 要求的"最高分片段"根本没出现。**函数对、装配错**（与前几轮同型）。
+    """
+
+    def test_real_retrieve_probe_reaches_refuse(self, monkeypatch):
+        """装配级：retrieve 走 **probe** 路径（低分样本被过滤，但探针带回）。"""
+        patch_cfg(monkeypatch)
+        from app.graph.final import refuse_node
+
+        low = dict(CHUNKS[0], score=0.10)   # 低于 min_score
+
+        def fake_retrieve(owner, query, cfg, *, probe=False):
+            # 模拟真实 retrieve：过阈值的为空；探针带回阈值下的最高分
+            return ([], low) if probe else ([],)
+
+        r = refuse_node(
+            {"question": "公司差旅报销流程是什么？", "chunks": [],
+             "probe_chunk": low, "history": []},
+        )
+        assert r["answer_type"] == "refusal"
+        assert "最高分片段" in r["final_text"], r["final_text"]
+        assert "0.1" in r["final_text"], "应显示探针分数"
+        assert low["doc_title"] in r["final_text"], "应显示来源文档"
+
+    def test_probe_absent_falls_back_to_plain_refusal(self):
+        """探针为 None（知识库真的空）→ 回落到无片段的拒答文案，不报错。"""
+        from app.graph.final import refuse_node
+
+        r = refuse_node({"question": "公司差旅报销流程是什么？", "chunks": [],
+                         "probe_chunk": None, "history": []})
+        assert r["answer_type"] == "refusal"
+        assert "未在知识库中找到" in r["final_text"]
+
+    def test_retrieve_probe_returns_highest_below_threshold(self, monkeypatch):
+        """纯函数：`retrieve(probe=True)` 带回阈值下的最高分（降序第一条）。"""
+        import app.retrieval as ret
+
+        rows = [
+            {"chunk_id": "a", "doc_id": "d", "doc_title": "t", "content": "c",
+             "heading_path": "", "score": 0.30},   # 低于阈值 0.35 → 探针
+            {"chunk_id": "b", "doc_id": "d", "doc_title": "t", "content": "c",
+             "heading_path": "", "score": 0.10},
+        ]
+        monkeypatch.setattr(ret, "embed_query", lambda q, cfg: [0.0] * 4)
+
+        class _Cur:
+            def execute(self, *a, **k): pass
+            def fetchall(self): return rows
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        class _Conn:
+            def cursor(self): return _Cur()
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        monkeypatch.setattr(ret, "_build_conn", lambda: _Conn(), raising=False)
+        monkeypatch.setattr("psycopg.connect", lambda *a, **k: _Conn(), raising=False)
+
+        chunks, probe = ret.retrieve("u", "q", {"retrieval_top_k": 5,
+                                                "retrieval_min_score": 0.35,
+                                                "hnsw_ef_search": 100,
+                                                "embedding_model": "m",
+                                                "bailian_base_url": "http://x",
+                                                "dashscope_api_key": "k"},
+                                     probe=True)
+        assert chunks == [], "过阈值的为空"
+        assert probe is not None and probe["score"] == 0.3, f"探针应为最高分 0.30，实际 {probe}"
+
+
 class TestRefusalClearsCitations:
     """FR-18③：明确拒答时禁止伪造引用（拒答却挂引用会误导用户）。
 

@@ -94,7 +94,22 @@ def refuse_node(state: dict, *, record_step=None) -> dict:
         text = _CLARIFY_TEXT
         answer_type = "clarify"
     elif not chunks:
-        text = REFUSAL_TEXT_NO_CHUNK
+        # PRD §7.4 硬要求：拒答必须"**列出最高分片段及分数**"，让用户判断是
+        # 文档缺失还是没问对。低于阈值的结果被检索层过滤掉了，所以这里用
+        # `probe_chunk`（阈值下的最高分样本，S9 实测补上）。
+        probe = state.get("probe_chunk")
+        if probe:
+            snippet = str(probe["content"]).strip().replace("\n", " ")
+            if len(snippet) > SNIPPET_MAX:
+                snippet = snippet[:SNIPPET_MAX]
+            text = (
+                "未在知识库中找到与该问题相关的资料（检索到的内容均低于相似度阈值）。\n\n"
+                f"以下是我检索到的最高分片段（分数 {probe['score']}，低于阈值），"
+                "你可以判断是否是文档缺失：\n"
+                f"> 来源：{probe['doc_title']}\n> {snippet}"
+            )
+        else:
+            text = REFUSAL_TEXT_NO_CHUNK
         answer_type = "refusal"
     else:
         top = chunks[0]

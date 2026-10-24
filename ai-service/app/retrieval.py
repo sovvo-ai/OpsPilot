@@ -58,11 +58,22 @@ def retrieve(
     cfg: dict,
     top_k: int | None = None,
     min_score: float | None = None,
-) -> list[dict[str, Any]]:
+    *,
+    probe: bool = False,
+) -> list[dict[str, Any]] | tuple[list[dict[str, Any]], dict[str, Any] | None]:
     """检索 top_k 切片，按余弦相似度降序，仅返回 score ≥ min_score 的结果。
 
     返回元素结构（对齐 agent-workflow §2.1 RetrievedChunk）：
       {chunk_id, doc_id, doc_title, score, content, heading_path}
+
+    **`probe=True`（S9 实测修出的缺口）**：返回 `(chunks, best_below)` 二元组，
+    其中 `best_below` 是**阈值之下的最高分样本**（无则 `None`）。
+
+    为什么需要它：PRD §7.4 硬要求拒答时"**列出它检索到的最高分片段及分数**"，
+    让用户判断是文档缺失还是没问对。但早期实现只返回过阈值的结果 ——
+    低分场景下 `chunks` 为空，refuse 只能输出干巴巴的"未找到"，
+    **那段"最高分片段"永远拿不到**（实测：`公司差旅报销流程是什么？` 走
+    `chunks=0` 分支）。探针不参与作答，只服务拒答展示。
     """
     top_k = top_k or cfg["retrieval_top_k"]
     min_score = cfg["retrieval_min_score"] if min_score is None else min_score
@@ -94,27 +105,33 @@ def retrieve(
             rows = cur.fetchall()
 
     chunks: list[dict[str, Any]] = []
-    for r in rows:
+    best_below: dict[str, Any] | None = None
+    for r in rows:                      # rows 已按相似度降序
         score = float(r["score"])
+        item = {
+            "chunk_id": str(r["chunk_id"]),
+            "doc_id": str(r["doc_id"]),
+            "doc_title": r["doc_title"],
+            "score": round(score, 4),
+            "content": r["content"],
+            "heading_path": r["heading_path"] or "",
+        }
         if score < min_score:
+            # 阈值之下的**第一条**即"最高分探针"（rows 降序）
+            if probe and best_below is None:
+                best_below = item
             continue
-        chunks.append(
-            {
-                "chunk_id": str(r["chunk_id"]),
-                "doc_id": str(r["doc_id"]),
-                "doc_title": r["doc_title"],
-                "score": round(score, 4),
-                "content": r["content"],
-                "heading_path": r["heading_path"] or "",
-            }
-        )
+        chunks.append(item)
     logger.info(
-        "检索完成 owner=%s query_len=%d 命中=%d 阈值=%.2f",
+        "检索完成 owner=%s query_len=%d 命中=%d 阈值=%.2f 探针=%s",
         owner_id,
         len(query),
         len(chunks),
         min_score,
+        f"{best_below['score']}" if best_below else "无",
     )
+    if probe:
+        return chunks, best_below
     return chunks
 
 
