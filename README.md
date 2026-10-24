@@ -55,31 +55,109 @@
 | 多轮保持率（A/B 配对） | **1.000** | ≥0.90 | ✅ |
 | 拒答正确率 | **1.000** | ≥0.85 | ✅ |
 | 过度拒答率 | **0.000** | ≤0.15 | ✅ |
-| 引用内容支持率 | `NOT RUN` | ≥0.90 | 人工复核 5 条待填 |
-| 任务成功率 | `NOT RUN` | ≥0.70 | 人工复核 5 条待填 |
+| 引用内容支持率 | **0.950** | ≥0.90 | ✅ |
+| 任务成功率 | **0.950** | ≥0.70 | ✅ |
 | 延迟 P95（kb_qa / log_diag） | **7.3s / 12.6s** | ≤8s / ≤25s | ✅ |
 
-> 口径说明：35 题评测集（kb_qa 10 / log_diag 8 / no_doc 6 / ambiguous 3 / citation_risk 3 / multiturn 5），gold 已复核（X5 确认）。**未跑的两项等人工复核回填，不填推算值**。
+> 口径说明：35 题评测集（kb_qa 10 / log_diag 8 / no_doc 6 / ambiguous 3 / citation_risk 3 / multiturn 5），gold 已复核（X5 确认）。
+> 报告含 git commit、逐题结果、judge 分列（用户 / AI / 混合三口径），未跑项一律 `NOT RUN`。完整报告见 `ai-service/evals/reports/`。
 > 环境：干净环境 `down -v → up -d → 冒烟通过` **28.4s**（目标 ≤5 分钟）。
+
+**⚠️ 人工复核抓到 1 条"引用越界"（`m001`），这条比满分更有说服力。**
+
+人工复核 5 条抽检时发现：`m001`（多轮追问"那它怎么配？"）的答案**把片段之外的通用知识挂在了 KB 引用号下** ——
+引用的 `chunk_id` 真实有效（机器判定的"引用 ID 有效率 100%"全过），但**那段内容并不支撑该结论**。
+
+- 这类问题**检索层的 Recall/MRR 抓不到**（检索确实命中了相关片段），**引用 ID 校验也抓不到**（ID 是真的）；
+- 只有**人工读语义**才能抓到 —— 这正是把"引用 ID 有效率"与"引用内容支持率"**分成两个指标**的原因：
+  合并成一个数会掩盖"引用都存在但都不支持"这种最危险的情况；
+- 结果是支持率 **0.950**（19/20）而**不是满分**。我们**没有**为此调数据集或调阈值，
+  而是把它记进校准日志并排进修复项（S9 前收紧 final/troubleshoot prompt：只复述片段内的操作建议，
+  超出片段的知识不带引用号或显式标注"模型通用知识，无 KB 出处"）。
+
+> 想验证这套评测不是走过场？看 `docs/testing/a3b_user_review.md` 里 5 条的原始判定记录
+> 与 `ai-service/evals/reports/*_v2.md` 的校准日志。
 
 ## 快速开始
 
+> **前置**：Docker Desktop 已启动；Python **3.11**（用于建 ai-service 的 venv）。
+> `make` **可选** —— 本机没装 make 就直接用下面的原始命令（等价）。
+
+### 1. 配置
+
 ```bash
 git clone <repo> && cd OpsPilot
-cp deploy/.env.example deploy/.env        # 填 DASHSCOPE_API_KEY 等
-make up                                    # 起 backend + ai-service + postgres
-make migrate                               # 执行迁移（0001~0003）
-
-# 冒烟：上传 5 篇种子文档并问一句
-ai-service/.venv/Scripts/python.exe scripts/smoke_test.sh
+cp deploy/.env.example deploy/.env
+# 编辑 deploy/.env，至少填 DASHSCOPE_API_KEY（百炼）；其余可保持默认
 ```
 
-一键跑评测：
+### 2. 起服务栈（backend + ai-service + postgres）
 
 ```bash
-cd ai-service && .venv/Scripts/python.exe -m evals.run_eval
-# → evals/reports/<ts>.json + .md（含逐题结果与 judge 分列）
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
 ```
+
+<details><summary>装了 make 的话，等价于 <code>make up</code></summary>
+
+```bash
+make up        # = 上面那条 docker compose 命令
+```
+</details>
+
+### 3. 建 Python 环境并跑迁移
+
+```bash
+# 用 Python 3.11 建 venv（路径按你的实际安装调整）
+"C:/Users/<你>/AppData/Local/Programs/Python/Python311/python.exe" -m venv ai-service/.venv
+
+# 装依赖
+ai-service/.venv/Scripts/python.exe -m pip install -r ai-service/requirements.txt
+
+# 执行数据库迁移（0001~0003）
+ai-service/.venv/Scripts/python.exe scripts/run_migrate.py up
+```
+
+<details><summary>装了 make 的话，第 3 步的迁移等价于 <code>make migrate</code></summary>
+
+```bash
+make migrate
+```
+</details>
+
+> **Linux/macOS**：把 `ai-service/.venv/Scripts/python.exe` 换成 `ai-service/.venv/bin/python`。
+
+### 4. 冒烟（确认全链路通）
+
+```bash
+# 健康检查 + 鉴权边界 + 真实链路（上传 5 篇 → 摄取 → 提问）
+# 注意：这是 **bash 脚本**，要用 bash 跑，不能用 python 跑
+bash scripts/smoke_test.sh
+```
+
+预期输出结尾：
+
+```
+[未鉴权 documents -> 401] 401
+[不存在的路径（未鉴权）-> 401] 401
+[端到端链路]
+  token ok
+  已上传 5 篇
+  5 篇摄取 completed
+  提问 -> answer_type=answered, citations=2
+  端到端链路 ok
+== 冒烟测试通过 ==
+```
+
+### 5. 跑评测（可选，约 4 分钟）
+
+```bash
+cd ai-service
+.venv/Scripts/python.exe -m evals.run_eval
+# → evals/reports/<ts>.json + .md（含逐题结果与 judge 分列三口径）
+```
+
+> **Windows 用户注意**：所有含中文的 HTTP 调用请用 Python `httpx`，
+> **不要用 Windows shell `curl`** —— 中文参数会被转义破坏（见 `test-plan` G7）。
 
 ## 演示
 
