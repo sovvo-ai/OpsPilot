@@ -102,7 +102,7 @@
 ### 1. 配置
 
 ```bash
-git clone <repo> && cd OpsPilot
+git clone https://github.com/sovvo-ai/OpsPilot.git && cd OpsPilot
 cp deploy/.env.example deploy/.env
 # 编辑 deploy/.env，至少填 DASHSCOPE_API_KEY（百炼）；其余可保持默认
 ```
