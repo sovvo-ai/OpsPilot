@@ -45,18 +45,49 @@ func UploadDocument(c *gin.Context) {
 	}
 
 	resp := gin.H{
-		"doc_id":          doc.ID,
-		"ingest_status":   doc.Status,
-		"deduplicated":    doc.Dedup,
-		"poll_url":        fmt.Sprintf("/api/v1/documents/%s", doc.ID),
-		"title":           doc.Title,
-		"byte_size":       doc.ByteSize,
-		"char_count":      doc.CharCount,
+		"doc_id":        doc.ID,
+		"ingest_status": doc.Status,
+		"deduplicated":  doc.Dedup,
+		"poll_url":      fmt.Sprintf("/api/v1/documents/%s", doc.ID),
+		"title":         doc.Title,
+		"byte_size":     doc.ByteSize,
+		"char_count":    doc.CharCount,
 	}
 	if doc.Dedup {
 		resp["retry_hint"] = fmt.Sprintf("POST /api/v1/documents/%s/reingest", doc.ID)
 	}
 	c.JSON(http.StatusAccepted, resp)
+}
+
+// ListDocuments 列出当前 owner 的未删除文档（前端左栏列表，UI-01）。
+//
+// 响应字段与 GetDocument 对齐，前端可复用同一套渲染逻辑。
+func ListDocuments(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	ownerID, _ := userID.(string)
+
+	db := c.MustGet("db").(*sql.DB)
+	docs, err := ingest.ListDocuments(db, ownerID, 50)
+	if err != nil {
+		middleware.AbortWithError(c, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		return
+	}
+
+	items := make([]gin.H, 0, len(docs))
+	for _, d := range docs {
+		items = append(items, gin.H{
+			"doc_id":        d.ID,
+			"title":         d.Title,
+			"ingest_status": d.Status,
+			"error_code":    d.ErrorCode,
+			"attempt":       d.Attempt,
+			"chunk_count":   d.ChunkCount,
+			"byte_size":     d.ByteSize,
+			"char_count":    d.CharCount,
+			"created_at":    d.CreatedAt,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items, "total": len(items)})
 }
 
 // GetDocument 查询文档摄取状态。

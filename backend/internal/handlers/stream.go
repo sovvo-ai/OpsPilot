@@ -244,26 +244,61 @@ func AskMessageStream(c *gin.Context) {
 
 	// 上游/内部错误 → 必发 error（S3：禁止静默断流）
 	if streamErr != nil && !clientGone.Load() {
-		// **上游连接被切断 = 客户端断连**（§8.5-S4）。
-		// 两种表现形式（实测都出现过）：
-		//   ① `context.Canceled`：ctx 取消（心跳探测到写失败后 cancelStream）
-		//   ② `STREAM_INTERRUPTED`：上游 resp.Body 读取中断（ctx 取消 → transport 关闭连接）
-		// 早期只判 ①，漏了 ②，导致断流被误报为普通错误且不落 interrupted trace。
-		isDisconnect := errors.Is(streamErr, context.Canceled) ||
+		// ⚠️ 这里必须**区分两种"流中断"**（S9 实测踩到的真缺陷）：
+		//
+		//   A. **客户端走了**（客户端 RST / 停止读取）→ 记 interrupted trace，不补 error
+		//      （对方已经收不到了）。
+		//   B. **上游 ai-service 死了**（客户端还在）→ **必须补发 error 事件**：
+		//      SSE 响应头早已 200，错误只能靠事件传达；否则前端永远等不到 done/error，
+		//      表现为"一直转圈"或"半截答案当完整答案"—— 违反 §8.5-S3「禁止静默断流」。
+		//
+		// A 的判据：**心跳已探到客户端写失败**（clientGone），或**父 ctx 取消**
+		//                （`c.Request.Context()` 就是客户端连接）。
+		// B 的判据：streamErr 是中断类错误，但**父 ctx 仍活着** → 说明是我们这一侧
+		//                的上游挂了，不是客户端走了。
+		//
+		// 早期实现把 `STREAM_INTERRUPTED` 一律判为 A，于是 B 场景**静默断流**。
+		parentGone := c.Request.Context().Err() != nil
+		isInterruptErr := errors.Is(streamErr, context.Canceled) ||
 			strings.Contains(streamErr.Error(), "context canceled")
 		if he, ok := streamErr.(*chat.HTTPError); ok && he.Code == "STREAM_INTERRUPTED" {
-			isDisconnect = true
+			isInterruptErr = true
 		}
-		if isDisconnect {
+		isClientDisconnect := clientGone.Load() || parentGone ||
+			(errors.Is(streamErr, context.Canceled) && parentGone)
+
+		if isClientDisconnect {
 			clientGone.Store(true)
 			log.Printf("判定客户端断连（streamErr=%v, run_id=%s）", streamErr, runID)
 		} else {
-			code, msg := "STREAM_ERROR", streamErr.Error()
+			// B：上游故障，客户端还在 —— 必须告知，且如实标注为上游不可用
+			code, msg := "STREAM_ERROR", "回答流异常中断，请重试"
 			if he, ok := streamErr.(*chat.HTTPError); ok {
 				code, msg = he.Code, he.Msg
+			} else if isInterruptErr {
+				code = "AI_SERVICE_UNAVAILABLE"
+				msg = "AI 服务中断，请稍后重试（若持续失败请联系管理员并提供 request_id）"
 			}
-			_ = writeSSE(chat.StreamEvent{Type: "error", Code: code, Message: msg})
+			_ = writeSSE(chat.StreamEvent{Type: "error", Code: code, Message: msg, RequestID: reqID})
 			log.Printf("stream error code=%s: %s (request_id=%s)", code, msg, reqID)
+
+			// 上游死了也**不能丢用户的问题**：落一条 interrupted trace（内容为已产出部分）。
+			if runID != "" {
+				interrupted := &chat.TurnResult{
+					RunID: runID, AnswerType: "interrupted",
+					TerminatedReason: "upstream_unavailable",
+					Degraded:         true,
+					DegradeReasons:   []string{"ai_service_unavailable"},
+					FinalText:        doneResultText(doneResult),
+					DurationMS:       int(time.Since(startedAt).Milliseconds()),
+				}
+				if _, _, perr := persistAssistantTurn(db, sessionID, ownerID, reqID, interrupted); perr != nil {
+					log.Printf("落上游中断 trace 失败: %v (run_id=%s)", perr, runID)
+				} else {
+					log.Printf("上游中断：已落 trace (run_id=%s)", runID)
+				}
+			}
+			return
 		}
 	}
 
@@ -313,7 +348,8 @@ func AskMessageStream(c *gin.Context) {
 			// 落库失败：客户端已收到全文，补发 error 说明"结果未保存"
 			_ = writeSSE(chat.StreamEvent{
 				Type: "error", Code: "PERSIST_FAILED",
-				Message: "回答已生成但保存失败，请刷新重试",
+				Message:   "回答已生成但保存失败，请刷新重试",
+				RequestID: reqID,
 			})
 			log.Printf("落库失败（流式）: %v (request_id=%s)", perr, reqID)
 			return
@@ -329,6 +365,14 @@ func AskMessageStream(c *gin.Context) {
 
 	// 无 done 且非客户端断开 → 说明上游提前结束（异常），上面已补 error
 	_ = io.EOF
+}
+
+// doneResultText 安全取 done 结果的正文（可能为 nil）。
+func doneResultText(r *chat.TurnResult) string {
+	if r == nil {
+		return ""
+	}
+	return r.FinalText
 }
 
 // acceptsEventStream 判断客户端是否接受 SSE（S6 回退判据）。

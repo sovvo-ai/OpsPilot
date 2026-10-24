@@ -143,10 +143,13 @@ func (o *Orchestrator) RunTurnStream(
 	}
 	resp, err := streamClient.Do(httpReq)
 	if err != nil {
+		// UI-08：**面向用户的文案必须可读** —— 不能把内网地址/底层错误串暴露出来
+		// （早期实现直接 `err.Error()`，页面显示 `Post "http://ai-service:8000/..."`）。
+		// 原始错误进日志，响应里只给可读原因 + request_id。
 		return "", &HTTPError{
 			Status: http.StatusServiceUnavailable,
 			Code:   "AI_SERVICE_UNAVAILABLE",
-			Msg:    err.Error(),
+			Msg:    "AI 服务不可用，请稍后重试（若持续失败请联系管理员并提供 request_id）",
 		}
 	}
 	defer resp.Body.Close()
@@ -207,7 +210,7 @@ func (o *Orchestrator) RunTurnStream(
 		return runID, &HTTPError{
 			Status: http.StatusBadGateway,
 			Code:   "STREAM_INTERRUPTED",
-			Msg:    "流读取中断: " + err.Error(),
+			Msg:    "回答流被中断，请重试",
 		}
 	}
 	return runID, nil
@@ -229,7 +232,8 @@ func (o *Orchestrator) RunTurn(req TurnRequest) (*TurnResult, error) {
 
 	resp, err := o.client.Do(httpReq)
 	if err != nil {
-		return nil, &HTTPError{Status: http.StatusServiceUnavailable, Code: "AI_SERVICE_UNAVAILABLE", Msg: err.Error()}
+		return nil, &HTTPError{Status: http.StatusServiceUnavailable, Code: "AI_SERVICE_UNAVAILABLE",
+			Msg: "AI 服务不可用，请稍后重试（若持续失败请联系管理员并提供 request_id）"}
 	}
 	defer resp.Body.Close()
 

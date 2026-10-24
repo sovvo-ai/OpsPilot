@@ -6,7 +6,16 @@ import (
 )
 
 // Citation 是引用快照（对齐 openapi-backend Citation schema）。
+//
+// **`Index` 必须保留**（S9 实测发现的装配缺陷）：ai-service 按正文角标 `[n]`
+// 标注每条引用的 `index`，前端据此把正文角标映射到片段（**禁止用数组下标** ——
+// 答案若先写 `[2]` 再写 `[1]`，数组顺序与角标号不一致，用下标会点开错片段）。
+//
+// 该字段曾因本 struct 未声明而被 `encoding/json` 静默丢弃：ai-service 侧有、
+// Go 侧无、前端拿不到，表现为"点任何角标都提示未找到引用"。
+// 与 D2（`retrieval_top_score` 未落库）同属"字段在写路径存在、传输路径丢失"。
 type Citation struct {
+	Index      int     `json:"index"`
 	ChunkID    string  `json:"chunk_id"`
 	DocID      string  `json:"doc_id"`
 	DocTitle   string  `json:"doc_title"`

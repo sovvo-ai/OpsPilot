@@ -16,6 +16,7 @@ func RegisterAPIRoutes(r *gin.Engine, health *HealthHandler, auth *AuthHandler) 
 
 	// 文档
 	r.POST("/api/v1/documents", UploadDocument)
+	r.GET("/api/v1/documents", ListDocuments)
 	r.GET("/api/v1/documents/:doc_id", GetDocument)
 	r.DELETE("/api/v1/documents/:doc_id", DeleteDocument)
 	r.POST("/api/v1/documents/:doc_id/reingest", ReingestDocument)

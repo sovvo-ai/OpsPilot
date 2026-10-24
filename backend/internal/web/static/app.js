@@ -173,12 +173,21 @@ async function boot() {
   updateConnBadge();
 }
 
-/** 取 dev token（演示环境；生产应走登录） */
+/**
+ * 取 dev token（演示环境；生产应走登录）。
+ *
+ * **方法必须是 POST** —— 后端路由是 `r.POST("/api/v1/auth/dev-token")`；
+ * 早期实现用了 GET，被路由匹配拒绝返回 404 → 拿不到 token → 后续所有 API 401，
+ * 整站"看起来白屏"。这是实测（S9 UI 冒烟）抓到的装配缺陷。
+ * 用户名走 **query 参数**（`DefaultQuery`），不是 body。
+ */
 async function ensureToken() {
   const cached = sessionStorage.getItem(STORAGE_TOKEN);
   if (cached) { state.token = cached; return; }
   try {
-    const r = await fetch('/api/v1/auth/dev-token?user=' + encodeURIComponent(state.user));
+    const r = await fetch('/api/v1/auth/dev-token?user=' + encodeURIComponent(state.user),
+                          { method: 'POST' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
     const d = await r.json();
     state.token = d.token;
     sessionStorage.setItem(STORAGE_TOKEN, d.token);
@@ -284,9 +293,27 @@ function routeFromHash() {
  * ═════════════════════════════════════════════════════════════ */
 
 async function loadDocuments() {
-  // 后端未提供"列出全部文档"端点；通过会话无关的方式获取：
-  // 这里用最近上传集合（本地维护）+ 逐个查询状态。
-  // 若用户刷新，列表为空 —— 属已知限制（见 README「已知限制」）。
+  // S9 新增 `GET /api/v1/documents`：刷新后仍能列出已有文档（UI-01）。
+  // 早期没有该端点时，刷新必空 → 与"上传后出现在列表"的承诺脱节。
+  try {
+    const d = await api.get('/api/v1/documents');
+    const items = d.items || [];
+    // 保留本地已有的瞬时状态（避免刚上传的 pending 被服务端旧值覆盖）
+    const local = new Map(state.documents.map((x) => [x.doc_id, x]));
+    state.documents = items.map((s) => {
+      const prev = local.get(s.doc_id);
+      const merged = Object.assign({}, s);
+      if (prev && (prev.ingest_status === 'pending' || prev.ingest_status === 'processing')
+          && (s.ingest_status === 'pending' || s.ingest_status === 'processing')) {
+        merged.ingest_status = prev.ingest_status;
+      }
+      return merged;
+    });
+  } catch (e) {
+    // 列表拉取失败不清空已有展示（避免"闪空"）
+    const { msg, rid } = renderError(e);
+    if (!state.documents.length) toast('加载文档列表失败：' + msg, 'error', rid);
+  }
   renderDocuments();
 }
 
@@ -530,6 +557,7 @@ async function askQuestion() {
   const abortCtrl = new AbortController();
   let interrupted = false;
   let receivedDone = false;
+  let sawError = false;      // 是否收到了明确的 error 事件（与"静默截断"区分）
 
   try {
     const resp = await fetch(
@@ -592,7 +620,10 @@ async function askQuestion() {
           if (ev.code === 'CLIENT_DISCONNECTED') {
             interrupted = true;
           } else {
-            throw { code: ev.code || 'STREAM_ERROR', message: ev.message || '流式错误', request_id: '' };
+            // UI-08：错误必带 request_id（后端 StreamEvent 已补该字段）
+            sawError = true;
+            throw { code: ev.code || 'STREAM_ERROR', message: ev.message || '流式错误',
+                    request_id: ev.request_id || '' };
           }
         }
         // `saved` 事件：落库确认，前端无需处理
@@ -604,9 +635,18 @@ async function askQuestion() {
     } else {
       interrupted = true;                 // 网络中断 → 保留半截（UI-09）
       const { msg, rid } = renderError(e);
-      if (!(e && e.code === 'CLIENT_DISCONNECTED')) toast('生成失败：' + msg, 'error', rid);
+      if (!(e && e.code === 'CLIENT_DISCONNECTED')) { sawError = true; toast('生成失败：' + msg, 'error', rid); }
     }
   } finally {
+    // PRD §8.5-S2：**正常结束必须显式收到 `done`** —— 反过来说，没收到 `done`
+    // 就说明流被截断（上游挂了 / 服务端关连接）。
+    //
+    // 为什么必须在 `finally` 里补这一条（实测踩到）：服务端关闭连接时，
+    // `reader.read()` 往往**以 `done:true` 正常返回**，不会抛异常 —— 于是走不进
+    // catch，`interrupted` 保持 false，页面把**半截答案当完整答案**展示，
+    // 违背 U9"中断后提示不完整"。判据只能落在"有没有收到 done"这个协议事实上。
+    if (!receivedDone) interrupted = true;
+
     state.sending = false;
     state.streamingSessionId = null;
     btn.disabled = false;
@@ -614,7 +654,9 @@ async function askQuestion() {
     bindCiteMarks(assistantNode);
 
     // 用最终状态重渲染这条助手消息（去掉光标；中断则加提示）
-    const finalNode = renderMessage(assistantMsg, { interrupted: interrupted && !receivedDone });
+    // 明确报错（已 toast）不再叠加"可能不完整"；**静默截断**（无 done 无 error）才提示
+    const showIncompleteWarn = interrupted && !receivedDone && !sawError;
+    const finalNode = renderMessage(assistantMsg, { interrupted: showIncompleteWarn });
     assistantNode.replaceWith(finalNode);
     scrollToBottom();
 

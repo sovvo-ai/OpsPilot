@@ -354,6 +354,51 @@ func GetDocument(db *sql.DB, ownerID, docID string) (*Document, error) {
 	return &doc, nil
 }
 
+// ListDocuments 列出该 owner 的未删除文档（按创建时间倒序）。
+//
+// 为什么必须有这个函数（S9 UI 冒烟实测发现）：PRD UI-01 要求"上传后立即出现在
+// 文档列表"，但只有 `GET /documents/{id}`（单个查询）—— 页面刷新后前端无从得知
+// 已有文档 → 列表必然为空，与"刷新仍在当前会话"的体验不一致。
+// 该端点只返回**未删除**（`deleted_at IS NULL`）的文档。
+func ListDocuments(db *sql.DB, ownerID string, limit int) ([]Document, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := db.Query(
+		`SELECT d.id, d.owner_id, d.title, d.source_hash, d.byte_size, d.char_count,
+		        d.created_at,
+		        j.status, j.error_code, j.attempt, j.chunk_count
+		   FROM documents d
+		   JOIN ingest_jobs j ON j.doc_id = d.id
+		  WHERE d.owner_id = $1 AND d.deleted_at IS NULL
+		  ORDER BY d.created_at DESC
+		  LIMIT $2`,
+		ownerID, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]Document, 0, limit)
+	for rows.Next() {
+		var doc Document
+		var errorCode sql.NullString
+		if err := rows.Scan(
+			&doc.ID, &doc.OwnerID, &doc.Title, &doc.SourceHash, &doc.ByteSize, &doc.CharCount,
+			&doc.CreatedAt,
+			&doc.Status, &errorCode, &doc.Attempt, &doc.ChunkCount,
+		); err != nil {
+			return nil, err
+		}
+		if errorCode.Valid {
+			doc.ErrorCode = errorCode.String
+		}
+		out = append(out, doc)
+	}
+	return out, rows.Err()
+}
+
 // ClaimJob 原子抢占：pending → processing。
 func ClaimJob(db *sql.DB) (*JobClaim, error) {
 	token, err := generateRunToken()
