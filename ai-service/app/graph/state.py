@@ -78,6 +78,8 @@ class State(TypedDict, total=False):
     # 节点显式指定的 answer_type（优先于 final 的自动判定）。
     # 用途：troubleshoot 的零证据闸门把答案定为 clarify（D1）。
     _force_answer_type: str | None
+    # S9：引用越界明细（代码层检测，写进 trace 供复核；不自动删引用）
+    citation_overreach: list[dict]
 
     # --- 横切 ---
     degraded: bool

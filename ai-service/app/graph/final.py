@@ -13,6 +13,7 @@ from app.chat import (
     decide_answer_type,
     extract_citations,
     validate_citations,
+    detect_citation_overreach,
 )
 from app.graph.budget import PRIORITY_FINAL, Budget
 
@@ -235,6 +236,17 @@ def final_node(
     if answer_type == "refusal":
         citations = []  # FR-18③：拒答禁止伪造引用
 
+    # S9：引用越界检测（观测性，不自动删引用）—— 来源 S8 A3b m001 实证。
+    # 引用 ID 有效率只验"引用是否存在"；本项验"引用是否支撑结论"的**代码可观测切片**：
+    # 带 `[n]` 的句子里若出现该片段没有的技术标识符，几乎必然是从模型自身知识带入的。
+    overreach = detect_citation_overreach(answer or "", citations, chunks)
+    if overreach:
+        logger.warning(
+            "检测到引用越界 %d 处（引用 ID 有效但内容不支撑）：%s",
+            len(overreach),
+            [f"[{o['mark']}]{o['tokens_not_in_source']}" for o in overreach[:3]],
+        )
+
     step = {
         "node": "final",
         "duration_ms": int((time.monotonic() - t0) * 1000),
@@ -242,6 +254,7 @@ def final_node(
         "output_summary": (
             f"direct_pass={direct_pass}, llm_used={llm_used}, "
             f"citations={len(citations)}, answer_type={answer_type}"
+            + (f", overreach={len(overreach)}" if overreach else "")
         ),
         "degraded": degraded,
     }
@@ -254,4 +267,5 @@ def final_node(
         "answer_type": answer_type,
         "degraded": degraded,
         "degrade_reasons": reasons,
+        "citation_overreach": overreach,
     }

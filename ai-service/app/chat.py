@@ -104,14 +104,25 @@ def build_prompt(
             f"不得引用以下编号（已被校验剔除）：{', '.join(invalid_citations)}。\n"
         )
 
+    # S9 引用纪律（来源 = S8 A3b 人工复核实证，缺陷 m001）：
+    # 实测发现模型会把**片段之外的通用知识**（如"initialDelaySeconds 应大于启动耗时"、
+    # "HTTP 探针非 2xx/3xx 会失败"）挂在**真实有效的 KB 引用号**下。引用 ID 校验
+    # （只验存在性）与检索指标都抓不到 —— 属"引用越界"。故在 prompt 层显式区分两类内容。
     return (
         "你是运维知识助手。请**优先依据下方【知识库片段】**回答问题。\n"
         "规则：\n"
-        "1. 每条事实性结论后必须标注来源编号，格式如 `[1]`；有片段支撑的结论务必给出编号。\n"
-        "2. 只要【知识库片段】中有与问题主题相关的内容，就应基于它作答（即使问句表述简短"
+        "1. **引用纪律（最重要）**：`[n]` 只用于标注**直接取自该编号片段原文**的结论。\n"
+        "   - 若某条建议/参数/机制**在片段中找不到原文依据**，就**不要给它标任何编号**；\n"
+        "   - 这类内容如需给出，必须**显式标注**为「（模型通用知识，无 KB 出处）」，"
+        "并且**不要与带编号的结论混在同一段**；\n"
+        "   - **严禁**把片段外的知识挂在片段编号下 —— 那会让用户以为有据可查，"
+        "比不给依据更糟。\n"
+        "2. **宁少勿假**：只复述片段内明确写出的操作建议；片段的边界就是你的引用边界。\n"
+        "3. 每条**有片段依据**的结论后标注来源编号，格式如 `[1]`；编号只能取用"
+        "【知识库片段】中真实存在的编号。\n"
+        "4. 只要【知识库片段】中有与问题主题相关的内容，就应基于它作答（即使问句表述简短"
         "或含指代）。**仅当片段与问题主题完全无关时**，才说明「未在知识库找到依据」。\n"
-        "3. 不得编造片段中没有的步骤；不确定的措辞用「可能/建议优先排查」。\n"
-        "4. 不要输出与问题无关的内容。\n"
+        "5. 不确定的措辞用「可能/建议优先排查」；不要输出与问题无关的内容。\n"
         f"{anaphora_note}"
         f"{invalid_note}\n"
         f"【最近对话】\n{history_text}\n\n"
@@ -172,21 +183,31 @@ def extract_citations(answer: str, chunks: list[dict[str, Any]]) -> list[dict[st
 
     只保留 `n ∈ [1, len(chunks)]` 的引用；文本里编造的编号一律剔除
     （FR-22：校验在代码层执行，不依赖模型自觉）。
+
+    **S9 修正（角标映射，实测 m001）**：早期实现按"答案中 `[n]` 的**出现顺序**"
+    收集，并直接 `citations.append(chunks[n-1])`。于是若答案先出现 `[2]` 再出现 `[1]`，
+    则 `citations[0] = chunks[1]`、`citations[1] = chunks[0]` —— 前端按
+    "数组下标 i ↔ 正文 `[i+1]`"渲染就会**错位**（正文写 `[1]` 点开却是 2 号片段）。
+
+    现改为：**按 `n` 升序**输出，且每条带显式 `index` 字段。
+    前端一律用 `index` 匹配角标，**不得依赖数组下标**。
     """
-    used_indexes: list[int] = []
+    used: set[int] = set()
     for m in re.finditer(r"\[(\d{1,2})\]", answer):
         n = int(m.group(1))
-        if 1 <= n <= len(chunks) and n not in used_indexes:
-            used_indexes.append(n)
+        if 1 <= n <= len(chunks):
+            used.add(n)
 
     citations: list[dict[str, Any]] = []
-    for n in used_indexes:
+    for n in sorted(used):            # 升序：保证 index 与数组位置一致
         c = chunks[n - 1]
         snippet = c["content"].strip().replace("\n", " ")
         if len(snippet) > SNIPPET_MAX:
             snippet = snippet[:SNIPPET_MAX]
         citations.append(
             {
+                # `index` = 正文角标数字（`[n]` 里的 n）。前端按它匹配，不用数组下标。
+                "index": n,
                 "chunk_id": c["chunk_id"],
                 "doc_id": c["doc_id"],
                 "doc_title": c["doc_title"],
@@ -216,6 +237,76 @@ def validate_citations(
         else:
             invalid.append(cit["chunk_id"])
     return kept, invalid
+
+
+# ---------------------------------------------------------------------------
+# 引用越界检测（S9 新增，来源 = S8 A3b 人工复核实证 m001）
+# ---------------------------------------------------------------------------
+
+# 待检测的「技术标识符」形态：代码字面量/参数名/探针名等。
+# 这类词若出现在**被引片段之外**，几乎必然是从模型自身知识带进来的。
+_TECH_TOKEN_RE = re.compile(
+    r"\b("
+    r"[a-z][a-z0-9]*[A-Z][A-Za-z0-9]*"          # camelCase：initialDelaySeconds
+    r"|[a-z]+_[a-z0-9_]+"                        # snake_case：proxy_read_timeout
+    r"|[A-Za-z]+(?:Probe|Timeout|Seconds|Limit|Request|Memory)"  # 后缀形态：livenessProbe
+    r"|[0-9]{3}\b"                               # HTTP 状态码类：2xx 的 2 已单独处理
+    r")"
+)
+_SENTENCE_SPLIT = re.compile(r"(?<=[。！？\n])")
+
+
+def detect_citation_overreach(
+    answer: str,
+    citations: list[dict[str, Any]],
+    chunks: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """检测「引用越界」：带 `[n]` 的结论里出现了**该片段没有的技术标识符**。
+
+    **为什么需要这个函数**（S8 m001 实证）：
+    `validate_citations` 只校验 `chunk_id` **是否存在**（引用 ID 有效率），
+    它无法发现"引用真实存在、但内容不支撑结论"。实测 m001 的答案把片段外的
+    `initialDelaySeconds` 建议挂在 `[1]` 下 —— 引用 ID 校验全过，人工语义复核才发现。
+
+    **检测口径（保守，只报高置信越界）**：
+    对每个含 `[n]` 的句子，抽出其中的技术标识符 token；若该 token **在编号 n
+    对应的片段原文里完全不出现**，记为一次越界。返回明细供校准日志与报告使用。
+
+    **注意**：这是**观测性**检测（写进 trace 便于复核），**不自动删引用** ——
+    自动删会掩盖问题（用户看不到"曾经越界"），且可能误删合理表述。
+    """
+    if not answer or not citations:
+        return []
+
+    overreach: list[dict[str, Any]] = []
+    by_index = {c.get("index"): c for c in citations if c.get("index")}
+    # 编号 → 片段**完整原文**（优先用 chunks，避免 snippet 截断导致误判）
+    full_by_chunk = {c["chunk_id"]: c.get("content", "") for c in (chunks or [])}
+
+    for sent in _SENTENCE_SPLIT.split(answer):
+        marks = re.findall(r"\[(\d{1,2})\]", sent)
+        if not marks:
+            continue
+        tokens = {
+            t for t in _TECH_TOKEN_RE.findall(sent)
+            if len(t) >= 6           # 过短的词（如 `Pod`）命中率噪声大，跳过
+        }
+        if not tokens:
+            continue
+        for mark in set(marks):
+            cit = by_index.get(int(mark))
+            if not cit:
+                continue
+            haystack = full_by_chunk.get(cit.get("chunk_id", "")) or (cit.get("snippet") or "")
+            missing = sorted(t for t in tokens if t.lower() not in haystack.lower())
+            if missing:
+                overreach.append({
+                    "mark": int(mark),
+                    "chunk_id": cit.get("chunk_id"),
+                    "sentence": sent.strip()[:180],
+                    "tokens_not_in_source": missing,
+                })
+    return overreach
 
 
 # 答案层拒答特征（第二层判定，见 decide_answer_type 文档）

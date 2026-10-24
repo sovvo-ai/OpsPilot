@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.chat import (  # noqa: E402
     build_prompt,
     decide_answer_type,
+    detect_citation_overreach,
     extract_citations,
     validate_citations,
 )
@@ -68,6 +69,100 @@ class TestExtractCitations:
         long_chunk = dict(CHUNKS[0], content="字" * 500)
         cits = extract_citations("看这里[1]", [long_chunk])
         assert len(cits[0]["snippet"]) <= 200
+
+
+class TestCitationIndexMapping:
+    """S9 角标映射（来源 = S8 实测 m001：正文 `[n]` 与 citations 数组下标错位）。
+
+    早期实现按"答案中 `[n]` 的**出现顺序**"收集引用，若答案先出现 `[2]` 再 `[1]`，
+    则 `citations[0]=chunks[1]`、`citations[1]=chunks[0]` —— 前端按"下标 i ↔ 正文 `[i+1]`"
+    渲染就会点开错片段。
+    """
+
+    def test_out_of_order_marks_are_sorted(self):
+        """答案先 `[2]` 后 `[1]` → citations 必须按 index 升序，且带 index 字段。"""
+        answer = "先提第二条[2]，再提第一条[1]。"
+        cits = extract_citations(answer, CHUNKS)
+        assert [c["index"] for c in cits] == [1, 2], "必须按 index 升序"
+        # 展开位置（数组下标 i）与 index 必须一致：cits[i]["index"] == i+1
+        for i, c in enumerate(cits):
+            assert c["index"] == i + 1
+        assert cits[0]["chunk_id"] == CHUNKS[0]["chunk_id"]
+        assert cits[1]["chunk_id"] == CHUNKS[1]["chunk_id"]
+
+    def test_index_semantics_matches_mark(self):
+        """`index` 就是正文角标数字：正文 `[2]` → index==2 → 取 chunks[1]。"""
+        cits = extract_citations("只有第二条[2]。", CHUNKS)
+        assert len(cits) == 1
+        assert cits[0]["index"] == 2
+        assert cits[0]["chunk_id"] == CHUNKS[1]["chunk_id"]
+
+    def test_frontend_contract_mark_to_index(self):
+        """前端契约：正文任意 `[n]` 都能在 citations 里按 index 找到（不漏项）。"""
+        import re
+
+        answer = "甲[3] 乙[1] 丙[2]。"
+        cits = extract_citations(answer, CHUNKS + [dict(CHUNKS[0], chunk_id="33333333-3333-3333-3333-333333333333")])
+        by_index = {c["index"] for c in cits}
+        marks = {int(m) for m in re.findall(r"\[(\d+)\]", answer)}
+        assert marks.issubset(by_index), f"正文角标 {marks} 未被 citations 覆盖 {by_index}"
+
+
+class TestCitationOverreach:
+    """S9 引用越界检测（来源 = S8 A3b 人工复核实证 m001）。
+
+    缺陷本质：模型把**片段之外的通用知识**挂在**真实有效**的 KB 引用号下。
+    `validate_citations` 只验 chunk_id 存在性，抓不到这类问题。
+    """
+
+    SOURCE = (
+        "常见错误是把耗时的启动检查放进 livenessProbe，导致应用还没启动完就被反复重启。"
+        "启动慢的应用应使用 startupProbe 保护。readinessProbe 失败只会把 Pod 从 Service 端点摘除。"
+    )
+
+    def _chunks(self):
+        return [{
+            "chunk_id": "c1", "doc_id": "d1", "doc_title": "k8s.md",
+            "score": 0.6, "content": self.SOURCE,
+        }]
+
+    def test_detects_param_outside_source(self):
+        """片段外的参数名（initialDelaySeconds）挂在 [1] 下 → 必须检出。"""
+        chunks = self._chunks()
+        answer = "- probe 参数需合理设置：尤其 initialDelaySeconds 应大于应用实际启动耗时 [1]。"
+        cits = extract_citations(answer, chunks)
+        out = detect_citation_overreach(answer, cits, chunks)
+        assert len(out) == 1
+        assert "initialDelaySeconds" in out[0]["tokens_not_in_source"]
+        assert out[0]["mark"] == 1
+
+    def test_no_false_positive_when_token_in_source(self):
+        """片段里确实写了的词（startupProbe）→ 不得误报。"""
+        chunks = self._chunks()
+        answer = "启动慢的应用应使用 startupProbe 保护 [1]。"
+        cits = extract_citations(answer, chunks)
+        assert detect_citation_overreach(answer, cits, chunks) == []
+
+    def test_uncited_general_knowledge_not_flagged(self):
+        """**正确做法**：超片段知识**不带编号**并显式标注 → 不算越界（不应误伤）。"""
+        chunks = self._chunks()
+        answer = (
+            "启动慢的应用应使用 startupProbe 保护 [1]。\n"
+            "（模型通用知识，无 KB 出处）：典型示例为 initialDelaySeconds: 30，"
+            "periodSeconds: 10，该组合未在片段中出现，故不标注编号。"
+        )
+        cits = extract_citations(answer, chunks)
+        overreach = detect_citation_overreach(answer, cits, chunks)
+        # 第二句**没有** `[n]`，因此不被计入（检测只针对"带编号的句子"）
+        assert overreach == []
+
+    def test_observational_only_does_not_remove_citations(self):
+        """检测是**观测性**的：不得因此删引用（删了会掩盖问题）。"""
+        chunks = self._chunks()
+        answer = "尤其 initialDelaySeconds 要够大 [1]。"
+        cits = extract_citations(answer, chunks)
+        assert len(cits) == 1          # 引用仍在
+        assert detect_citation_overreach(answer, cits, chunks)  # 但被标记
 
     def test_snippet_no_newline(self):
         chunk = dict(CHUNKS[0], content="第一行\n第二行")
