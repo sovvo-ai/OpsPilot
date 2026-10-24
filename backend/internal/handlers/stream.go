@@ -1,3 +1,46 @@
+// Package handlers —— SSE 流式问答（`POST /api/v1/sessions/{id}/messages/stream`）。
+//
+// # 契约（PRD §8.5）
+//
+//	meta → delta* → citation（流后一次性）→ done | error
+//
+// 上游为 ai-service `/internal/v1/chat/stream`，本层**逐事件透传**，不改写不缓存。
+// 关键点：
+//   - **S5 同一落库路径**：`done` 事件携带完整 `result`，本层用它与非流式共用的
+//     `persistAssistantTurn()` 落库 —— **不存在第二套落库代码**。
+//   - **S6 回退**：`Accept` 不含 `text/event-stream` 时直接转非流式（同一份回答内容）。
+//   - **S3 禁止静默断流**：任何异常都发 `error` 事件。
+//
+// # ⚠️ 断连检测（§8.5-S4）—— 4 层坑，改这块前务必读完
+//
+// 目标：客户端断开 → 停止生成、落 `terminated_reason=interrupted` 的 trace、**不再烧 token**。
+// 实测中连续踩了 4 层，只有全部处理才能生效：
+//
+//  1. **`c.Request.Context()` 取消滞后**。
+//     SSE 客户端多为"停止读取"（TCP 半开），Go http server 需读到对方 FIN 才取消 ctx，
+//     可能滞后到整轮跑完。→ 本文件起了**心跳 goroutine**（每 200ms 写 SSE 注释行），
+//     写失败即判定断连，并 `cancelStream()` 让上游连接**立即关闭**。
+//
+//  2. **心跳写小数据不报错**。
+//     响应通常仅几 KB，**远小于内核发送缓冲**（数十 KB），客户端消失后写入仍会"成功"。
+//     → 心跳携带 **8KB 注释填充**（`:xxxx…`；SSE 规范中 `:` 开头为注释，客户端忽略），
+//     几次即可填满缓冲，后续写才会触发 EPIPE。
+//
+//  3. **`streamErr` 形态漏判**。
+//     断连时上游读取中断表现为 `*chat.HTTPError{Code:"STREAM_INTERRUPTED"}`，
+//     **不是** `context.Canceled`。→ 两种形态**都要**判定为断连。
+//
+//  4. **分支顺序（最隐蔽）**。
+//     断连分支必须位于 `streamErr` 处理**之后** —— 早期写在之前，导致判定时
+//     `clientGone` 尚未置位，**断连分支永远不执行**（表现为：日志有"判定断连"，
+//     但库里始终没有 interrupted trace）。
+//
+// 测试侧同类坑：`httpx` 的 `break`/`with` 退出**不保证关闭 TCP**（连接池复用），
+// 服务端感知不到。必须用**裸 socket + `SO_LINGER(0)` 强制 RST**，且在**读到 `meta`
+// 立即断**（最早时机最易触发 EPIPE）。详见 `scripts/s9_sse_contract.py`。
+//
+// 验证：`scripts/s9_sse_contract.py`（全新栈 9/9 通过，含断连后 `llm_calls=0`）；
+// 证据原文见 `docs/testing/s9-sse-contract.md`。
 package handlers
 
 import (
