@@ -29,6 +29,19 @@ from app.config import get_config
 from app.ingest import _build_client
 from app.retrieval import RetrievalError, retrieve, top_score
 
+# 引用标记正则：**同时接受 `[n]` 与 `<n>`**。
+#
+# 为什么必须容忍 `<n>`（S9 实测）：模型偶尔把引用写成尖括号形式（`<1>`），
+# 早期只认 `[n]` —— 于是那些引用**被静默丢弃**（citations 少一条、正文角标点不开），
+# 用户看到的答案"看起来有引用"但右栏对不上。统一在这里归一化。
+REF_MARK_RE = r"[\[<](\d{1,2})[\]>]"
+
+
+def normalize_ref_marks(text: str) -> str:
+    """把 `<n>` 形式的引用标记**归一化为 `[n]`**（写库与展示统一格式）。"""
+    return re.sub(r"<(\d{1,2})>", r"[\1]", text or "")
+
+
 logger = logging.getLogger("app.chat")
 
 # 引用片段上限（PRD FR-19：snippet ≤ 200 字）
@@ -118,11 +131,16 @@ def build_prompt(
         "   - **严禁**把片段外的知识挂在片段编号下 —— 那会让用户以为有据可查，"
         "比不给依据更糟。\n"
         "2. **宁少勿假**：只复述片段内明确写出的操作建议；片段的边界就是你的引用边界。\n"
-        "3. 每条**有片段依据**的结论后标注来源编号，格式如 `[1]`；编号只能取用"
+        "3. **编号必须与主题匹配（S9 实测新增）**：片段可能来自**与问题无关的文档**"
+        "（检索按相似度返回，噪声难免）。标注 `[n]` 前先确认那条片段**确实讲的是"
+        "这个问题里的对象** —— 例如问 Pod 探针时，来自《Linux 网络排查》的片段"
+        "**不能**用来支撑探针结论，哪怕它的编号是有效的。"
+        "**宁可整段不标引用**，也不要把无关文档的编号挂上去。\n"
+        "4. 每条**有片段依据**的结论后标注来源编号，格式如 `[1]`；编号只能取用"
         "【知识库片段】中真实存在的编号。\n"
-        "4. 只要【知识库片段】中有与问题主题相关的内容，就应基于它作答（即使问句表述简短"
+        "5. 只要【知识库片段】中有与问题主题相关的内容，就应基于它作答（即使问句表述简短"
         "或含指代）。**仅当片段与问题主题完全无关时**，才说明「未在知识库找到依据」。\n"
-        "5. 不确定的措辞用「可能/建议优先排查」；不要输出与问题无关的内容。\n"
+        "6. 不确定的措辞用「可能/建议优先排查」；不要输出与问题无关的内容。\n"
         f"{anaphora_note}"
         f"{invalid_note}\n"
         f"【最近对话】\n{history_text}\n\n"
@@ -193,7 +211,7 @@ def extract_citations(answer: str, chunks: list[dict[str, Any]]) -> list[dict[st
     前端一律用 `index` 匹配角标，**不得依赖数组下标**。
     """
     used: set[int] = set()
-    for m in re.finditer(r"\[(\d{1,2})\]", answer):
+    for m in re.finditer(REF_MARK_RE, answer):
         n = int(m.group(1))
         if 1 <= n <= len(chunks):
             used.add(n)
@@ -284,7 +302,7 @@ def detect_citation_overreach(
     full_by_chunk = {c["chunk_id"]: c.get("content", "") for c in (chunks or [])}
 
     for sent in _SENTENCE_SPLIT.split(answer):
-        marks = re.findall(r"\[(\d{1,2})\]", sent)
+        marks = re.findall(REF_MARK_RE, sent)
         if not marks:
             continue
         tokens = {

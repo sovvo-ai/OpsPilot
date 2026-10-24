@@ -14,12 +14,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.chat import (  # noqa: E402
+from app.chat import (
+    normalize_ref_marks,  # noqa: E402
     build_prompt,
     decide_answer_type,
     detect_citation_overreach,
     extract_citations,
     validate_citations,
+    normalize_ref_marks,
 )
 
 CHUNKS = [
@@ -277,3 +279,19 @@ class TestDecideAnswerType:
 
 # NOTE(S6)：编排类测试（引用清空 / 拒答分支）已迁移至 tests/test_graph.py，
 # 因为编排统一走 app.graph.run_turn（LangGraph 全图）。本文件只测被节点复用的纯工具函数。
+
+
+class TestRefMarkNormalization:
+    """引用标记格式归一化（S9 实测：模型偶尔输出 `<n>`）。"""
+
+    def test_angle_bracket_normalized_to_square(self):
+        assert normalize_ref_marks("结论一 <1>，结论二 <2>。") == "结论一 [1]，结论二 [2]。"
+
+    def test_square_bracket_untouched(self):
+        assert normalize_ref_marks("已经是对的 [1]。") == "已经是对的 [1]。"
+
+    def test_extract_accepts_angle_bracket(self):
+        """`<1>` 也要能被 extract_citations 认出来（否则引用被静默丢弃）。"""
+        cits = extract_citations("依据在此 <1>。", CHUNKS)
+        assert len(cits) == 1, f"<1> 未被识别：{cits}"
+        assert cits[0]["index"] == 1

@@ -14,6 +14,7 @@ from app.chat import (
     extract_citations,
     validate_citations,
     detect_citation_overreach,
+    normalize_ref_marks,
 )
 from app.graph.budget import PRIORITY_FINAL, Budget
 
@@ -275,6 +276,10 @@ def final_node(
             }
         ]
         logger.info("answered 但模型未标注引用，兜底归因到最高分片段 %s", top["chunk_id"][:8])
+
+    # 引用标记归一化：模型偶尔输出 `<n>`（实测漂移），统一成 `[n]` 后再抽取/落库，
+    # 否则那些引用会被 extract_citations 静默丢弃（正文有角标、右栏对不上）。
+    answer = normalize_ref_marks(answer or "")
 
     if answer_type == "refusal":
         citations = []  # FR-18③：拒答禁止伪造引用
