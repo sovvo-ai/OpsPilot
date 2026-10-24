@@ -14,6 +14,62 @@ import (
 // 最近 4 轮 = 8 条消息（PRD FR-31 / agent-workflow TurnRequest.history maxItems=8）
 const historyMessageLimit = 8
 
+// persistAssistantTurn 落 assistant 消息 + 完整轨迹（agent_runs + run_steps）。
+//
+// **S9 抽取**：非流式（AskMessage）与流式（AskMessageStream）**共用本函数** ——
+// 这是 PRD §8.5-S5「流式与非流式共用同一落库逻辑，不允许两套代码路径」的落地点。
+// 返回 assistant 消息 id。
+func persistAssistantTurn(
+	db *sql.DB,
+	sessionID, ownerID, reqID string,
+	result *chat.TurnResult,
+) (string, []chat.Citation, error) {
+	// 引用落库前再做一次代码层过滤：chunk_id 必须非空
+	citations := make([]chat.Citation, 0, len(result.Citations))
+	for _, cit := range result.Citations {
+		if cit.ChunkID == "" || cit.DocID == "" {
+			continue
+		}
+		citations = append(citations, cit)
+	}
+	citJSON, _ := json.Marshal(citations)
+
+	tokens := func(k string) int {
+		if result.Usage == nil {
+			return 0
+		}
+		return result.Usage[k]
+	}
+	trace := chat.RunTrace{
+		RunID:             result.RunID,
+		SessionID:         sessionID,
+		OwnerID:           ownerID,
+		RequestID:         reqID,
+		Route:             result.Route,
+		NodePath:          result.NodePath,
+		Steps:             result.Steps,
+		ToolCalls:         result.ToolCallRecords,
+		RetrievedChunkIDs: result.RetrievedChunkIDs,
+		RetrievalTopScore: result.RetrievalTopScore,
+		RewrittenQuery:    result.RewrittenQuery,
+		LLMCalls:          tokens("llm_calls"),
+		ToolCallsCount:    tokens("tool_calls"),
+		PromptTokens:      tokens("prompt_tokens"),
+		CompletionTokens:  tokens("completion_tokens"),
+		Degraded:          result.Degraded,
+		DegradeReasons:    result.DegradeReasons,
+		Preempted:         result.Preempted,
+		TerminatedReason:  result.TerminatedReason,
+		DurationMS:        result.DurationMS,
+	}
+	msgID, err := chat.InsertAssistantWithRun(db, trace, result.FinalText, string(citJSON))
+	if err != nil {
+		return "", nil, err
+	}
+	_ = chat.TouchSession(db, sessionID)
+	return msgID, citations, nil
+}
+
 // AskMessage 提问（非流式，S5）。
 
 // 流程（用户指定）：
@@ -101,51 +157,12 @@ func AskMessage(c *gin.Context) {
 		return
 	}
 
-	// 5. 引用落库前再做一次代码层过滤：chunk_id 必须形似 UUID 且非空
-	citations := make([]chat.Citation, 0, len(result.Citations))
-	for _, cit := range result.Citations {
-		if cit.ChunkID == "" || cit.DocID == "" {
-			continue
-		}
-		citations = append(citations, cit)
-	}
-	citJSON, _ := json.Marshal(citations)
-
-	// 6. 落 assistant 消息 + 完整轨迹（agent_runs + run_steps）
-	tokens := func(k string) int {
-		if result.Usage == nil {
-			return 0
-		}
-		return result.Usage[k]
-	}
-	trace := chat.RunTrace{
-		RunID:             result.RunID,
-		SessionID:         sessionID,
-		OwnerID:           ownerID,
-		RequestID:         reqIDStr,
-		Route:             result.Route,
-		NodePath:          result.NodePath,
-		Steps:             result.Steps,
-		ToolCalls:         result.ToolCallRecords,
-		RetrievedChunkIDs: result.RetrievedChunkIDs,
-		RetrievalTopScore: result.RetrievalTopScore,
-		RewrittenQuery:    result.RewrittenQuery,
-		LLMCalls:          tokens("llm_calls"),
-		ToolCallsCount:    tokens("tool_calls"),
-		PromptTokens:      tokens("prompt_tokens"),
-		CompletionTokens:  tokens("completion_tokens"),
-		Degraded:          result.Degraded,
-		DegradeReasons:    result.DegradeReasons,
-		Preempted:         result.Preempted,
-		TerminatedReason:  result.TerminatedReason,
-		DurationMS:        result.DurationMS,
-	}
-	msgID, err := chat.InsertAssistantWithRun(db, trace, result.FinalText, string(citJSON))
+	// 5-6. 落 assistant 消息 + 完整轨迹（与非流式共用同一函数，§8.5-S5）
+	msgID, citations, err := persistAssistantTurn(db, sessionID, ownerID, reqIDStr, result)
 	if err != nil {
 		handleChatErr(c, err)
 		return
 	}
-	_ = chat.TouchSession(db, sessionID)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": gin.H{

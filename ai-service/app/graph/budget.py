@@ -39,6 +39,14 @@ class DeadlineExceeded(Exception):
     """墙钟超时。"""
 
 
+class ClientDisconnected(Exception):
+    """客户端断连（S9 流式）。
+
+    PRD §8.5-S4：服务端检测断连 → **停止生成、释放预算、落 interrupted trace**，
+    不再继续消耗 token。由 `run_turn` 的 `should_stop` 探测触发（每次增量前检查）。
+    """
+
+
 class Budget:
     """一轮问答的预算与抢占控制器。"""
 

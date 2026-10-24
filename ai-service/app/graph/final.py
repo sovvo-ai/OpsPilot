@@ -121,6 +121,25 @@ def refuse_node(state: dict, *, record_step=None) -> dict:
     return {"final_text": text, "answer_type": answer_type, "citations": []}
 
 
+def _accepts_on_delta(fn) -> bool:
+    """判断 llm_call 是否支持 `on_delta` 关键字参数（S9 流式能力探测）。
+
+    生产实现（`make_llm_call`）支持；测试用的假 LLM 多为 2 参数闭包。
+    不做探测会在单测里抛 TypeError，把"能力缺失"误报成"生成失败"。
+    """
+    try:
+        import inspect
+
+        sig = inspect.signature(fn)
+        params = sig.parameters
+        if "on_delta" in params:
+            return True
+        # 有 **kwargs 也算支持
+        return any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+    except (TypeError, ValueError):
+        return False
+
+
 def final_node(
     state: dict,
     *,
@@ -128,6 +147,7 @@ def final_node(
     budget: Budget,
     llm_call=None,
     record_step=None,
+    on_delta=None,
 ) -> dict:
     """final 节点（LLM，可直通）。
 
@@ -135,6 +155,9 @@ def final_node(
              → 直接用 `draft_answer`，**不调模型**（A5"确定性节点零调用"的延伸）。
 
     预算：final 恒可获取额度（reserved_for_final），A6 要求"Final 永不被抢"。
+
+    `on_delta`（S9 流式）：透传给 `llm_call`，使答案**逐块**产出。
+    为 None 时走非流式（行为与 S8 完全一致）。
     """
     t0 = time.monotonic()
     degraded = bool(state.get("degraded", False))
@@ -181,7 +204,12 @@ def final_node(
                 invalid_citations=invalid,
             )
             try:
-                answer = llm_call("final", prompt)
+                # S9：透传 on_delta 走流式；但测试里的假 LLM 只接受 2 参数，
+                # 故按签名能力调用（不支持的自动回落非流式）。
+                if on_delta is not None and _accepts_on_delta(llm_call):
+                    answer = llm_call("final", prompt, on_delta=on_delta)
+                else:
+                    answer = llm_call("final", prompt)
                 budget.consume_llm()
                 llm_used = True
             except Exception as exc:  # noqa: BLE001

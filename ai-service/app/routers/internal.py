@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.chat import ChatError
 from app.graph import run_turn
@@ -143,9 +144,112 @@ async def chat(request: Request) -> JSONResponse:
 
 
 @router.post("/internal/v1/chat/stream")
-async def chat_stream(request: Request) -> JSONResponse:
+async def chat_stream(request: Request):
+    """Go 调用 Python 编排的**流式**入口（S9）。
+
+    PRD §8.5 契约：
+    - `meta` → `delta`* → `citation`（流后一次性）→ `done` | `error`
+    - **禁止静默断流**（S3）：异常必发 `error`
+    - 客户端断开（S4）：停止生成、落 `interrupted` trace、不再烧 token
+    - **与非流式共用同一 `run_turn`**（S5）：本函数不复制任何编排逻辑
+
+    返回 `StreamingResponse(text/event-stream)`。
+    """
     rid = getattr(request.state, "request_id", None)
-    return JSONResponse(
-        status_code=501,
-        content=make_error_body("NOT_IMPLEMENTED", "chat stream 尚未实现（S7）", rid),
+    try:
+        body = await request.json()
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse(
+            status_code=400,
+            content=make_error_body("INVALID_REQUEST", f"请求体解析失败: {exc}", rid),
+        )
+    if rid:
+        body["request_id"] = rid
+
+    async def event_gen():
+        """SSE 事件生成器：把 run_turn 的同步 emit 桥接到异步队列。
+
+        `run_turn` 是同步的（LangGraph invoke），故放线程里跑，用队列回传事件；
+        生成器侧用 `asyncio.to_thread` 等待队列，避免阻塞事件循环。
+        """
+        import asyncio
+        import queue as _queue
+        import threading
+
+        q: _queue.Queue = _queue.Queue()
+        SENTINEL = object()
+        interrupted = threading.Event()
+        result_holder: dict = {}
+
+        def emit(ev: dict) -> None:
+            q.put(ev)
+
+        def should_stop() -> bool:
+            return interrupted.is_set()
+
+        def worker() -> None:
+            try:
+                result_holder["result"] = run_turn(
+                    body, emit=emit, should_stop=should_stop
+                )
+            except ChatError as exc:
+                result_holder["error"] = ("CHAT_ERROR", exc.code, exc.message)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("stream 执行失败")
+                result_holder["error"] = ("INTERNAL_ERROR", "INTERNAL_ERROR", str(exc))
+            finally:
+                q.put(SENTINEL)
+
+        th = threading.Thread(target=worker, daemon=True)
+        th.start()
+
+        def sse(ev: dict) -> str:
+            return f"event: {ev['type']}\ndata: {json.dumps(ev, ensure_ascii=False)}\n\n"
+
+        try:
+            while True:
+                # 断连探测（S4）：客户端走了就置位，让 worker 尽快停。
+                # 间隔取 50ms：生成器与 worker 是并发的，间隔过大（如 200ms）
+                # 会让短回答在"察觉断连"前就跑完（实测踩到过）。
+                if await request.is_disconnected():
+                    interrupted.set()
+
+                try:
+                    ev = await asyncio.to_thread(q.get, True, 0.05)
+                except _queue.Empty:
+                    continue
+
+                if ev is SENTINEL:
+                    break
+                yield sse(ev)
+
+            # worker 结束但还没发 done/error → 兜底（**禁止静默断流**）
+            if result_holder.get("error"):
+                _, code, msg = result_holder["error"]
+                yield sse({"type": "error", "code": code, "message": msg})
+            else:
+                # S4 保险：若已察觉断连、但 done 已发出（生成太快来不及中断），
+                # 在**流尾部**补发 error 说明"生成被中断"，避免前端误判为完整回答。
+                res = result_holder.get("result") or {}
+                if interrupted.is_set() and res.get("terminated_reason") == "completed":
+                    yield sse({
+                        "type": "error", "code": "CLIENT_DISCONNECTED",
+                        "message": "客户端断开，生成已中断",
+                    })
+        except asyncio.CancelledError:
+            # 客户端断开导致生成器被取消：置位并交给 worker 收尾落 trace
+            interrupted.set()
+            raise
+        finally:
+            # 等 worker 落完库（trace 必须写成功，否则 U9"断流后 trace"无从验证）
+            await asyncio.to_thread(th.join, 30)
+
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",   # 防中间层缓冲（nginx 类）
+            "Connection": "keep-alive",
+        },
     )

@@ -22,7 +22,13 @@ from langgraph.graph import END, StateGraph
 
 from app.chat import ChatError
 from app.config import get_config
-from app.graph.budget import Budget, BudgetExhausted, DeadlineExceeded, MAX_STEPS
+from app.graph.budget import (
+    Budget,
+    BudgetExhausted,
+    ClientDisconnected,
+    DeadlineExceeded,
+    MAX_STEPS,
+)
 from app.graph.evidence import evidence_node
 from app.graph.final import final_node, refuse_node, smalltalk_node
 from app.graph.retrieval import retrieval_node
@@ -84,6 +90,7 @@ class Runner:
         llm_call=None,
         tool_executor=None,
         retrieve_fn=None,
+        on_delta=None,
     ) -> None:
         self.cfg = cfg
         self.budget = Budget()
@@ -91,6 +98,8 @@ class Runner:
         self.llm_call = llm_call
         self.tool_executor = tool_executor
         self.retrieve_fn = retrieve_fn
+        # S9：流式增量回调（None = 非流式）
+        self.on_delta = on_delta
 
     def record_step(self, step: dict) -> None:
         self.steps.append(step)
@@ -141,6 +150,7 @@ class Runner:
             budget=self.budget,
             llm_call=self.llm_call,
             record_step=self.record_step,
+            on_delta=self.on_delta,
         )
 
     def _n_refuse(self, state: State) -> dict:
@@ -192,11 +202,20 @@ def run_turn(
     llm_call=None,
     tool_executor=None,
     retrieve_fn=None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     """执行一轮问答（全图）。
 
     入参对齐 TurnRequest（含内部扩展 owner_id）；出参对齐 TurnResult。
-    `emit` 非空时在关键点回调事件（meta/citation/done/error），供 S7 流式复用。
+    `emit` 非空时在关键点回调事件（meta/delta/citation/done/error），供流式复用。
+
+    **S9 流式（PRD §8.5）**：
+    - `delta` 事件由 `on_delta` 桥接：包装成 `{"type": "delta", "text": ...}` 后 emit；
+      **只在 `emit` 存在时启用**（非流式路径完全不受影响）。
+    - `should_stop`：客户端断连探测。每次增量前询问；返回 True 则抛
+      `ClientDisconnected` 中断生成 → `terminated_reason="interrupted"`，
+      **停止烧 token**（§8.5-S4）。
+    - `meta` 事件含 `run_id/session_id/request_id`（§8.5-S1）。
     """
     cfg = get_config()
     started = time.monotonic()
@@ -218,6 +237,15 @@ def run_turn(
     if emit:
         emit({"type": "meta", "run_id": run_id, "session_id": session_id, "request_id": request_id})
 
+    # S9：把 on_delta 桥接成 delta 事件；仅流式（emit 存在）时启用，
+    # 保证非流式路径的 llm_call 调用签名与 S8 完全一致（stream=False）。
+    _on_delta = None
+    if emit is not None:
+        def _on_delta(text: str) -> None:   # noqa: ANN001
+            if should_stop is not None and should_stop():
+                raise ClientDisconnected("客户端已断开")
+            emit({"type": "delta", "text": text})
+
     runner = Runner(
         cfg,
         llm_call=llm_call or make_llm_call(cfg),
@@ -225,6 +253,7 @@ def run_turn(
         # 测试可传自己的 executor 覆盖。
         tool_executor=tool_executor or ToolExecutor(),
         retrieve_fn=retrieve_fn,
+        on_delta=_on_delta,
     )
     app = runner.build()
 
@@ -247,6 +276,11 @@ def run_turn(
     terminated_reason = "completed"
     try:
         final_state = app.invoke(init)
+    except ClientDisconnected:
+        # PRD §8.5-S4：客户端断连 → 停止生成、落 interrupted trace、不再烧 token。
+        terminated_reason = "interrupted"
+        final_state = dict(init)
+        logger.info("客户端断连，已中断生成（run_id=%s）", run_id)
     except DeadlineExceeded:
         terminated_reason = "deadline_exceeded"
         final_state = dict(init)
@@ -258,8 +292,18 @@ def run_turn(
         terminated_reason = "model_unavailable"
         final_state = dict(init)
 
+    # 断连时不补兜底文案（客户端已不在，写了也没人看，还会多烧一次预算）
+    if terminated_reason == "interrupted":
+        final_state["final_text"] = final_state.get("final_text") or ""
+        final_state["answer_type"] = "interrupted"
+        final_state["degraded"] = True
+        reasons = list(final_state.get("degrade_reasons") or [])
+        if "interrupted" not in reasons:
+            reasons.append("interrupted")
+        final_state["degrade_reasons"] = reasons
+
     # 未走到终止节点的兜底（预算/超时中断）
-    if not final_state.get("final_text"):
+    if not final_state.get("final_text") and terminated_reason != "interrupted":
         final_state["final_text"] = "未能在预算内完成回答，请稍后重试。"
         final_state["answer_type"] = "degraded"
         final_state["degraded"] = True
@@ -273,20 +317,13 @@ def run_turn(
     degraded = bool(final_state.get("degraded", False))
     reasons = list(final_state.get("degrade_reasons") or [])
     preempted = list(runner.budget.preempted)
-
-    if emit:
-        emit({"type": "citation", "citations": citations})
-        emit(
-            {
-                "type": "done",
-                "usage": {"llm_calls": runner.budget.llm_calls, "tool_calls": runner.budget.tool_calls},
-            }
-        )
-
     duration_ms = int((time.monotonic() - started) * 1000)
     node_path = [s["node"] for s in runner.steps]
 
-    return {
+    # **先组装 result，再 emit** —— done 事件需携带完整结果，
+    # 使 Go 侧能用**与非流式完全相同的落库路径**（§8.5-S5），
+    # 无需二次查询、也无需在 Go 侧复制一份结果组装逻辑。
+    result: dict[str, Any] = {
         "run_id": run_id,
         "session_id": session_id,
         "route": final_state.get("route") or "kb_qa",
@@ -321,7 +358,29 @@ def run_turn(
         # 内部字段（评测/验收用，计算 Recall@5 需要完整 Top-K 集合，而非仅被引用的切片）。
         # Go 侧 TurnResult 未声明该字段，json 解码时会被忽略，不影响契约。
         "retrieved_chunk_ids": [c.get("chunk_id") for c in (final_state.get("chunks") or [])],
+        # S9：引用越界检测明细（观测性；Go 侧落 trace 供人工复核）
+        "citation_overreach": final_state.get("citation_overreach") or [],
     }
+
+    if emit:
+        # §8.5-S1：citation **流结束后一次性发**（不在流中插半截）
+        emit({"type": "citation", "citations": citations})
+        if terminated_reason == "interrupted":
+            # 断连：客户端已走，发 error 说明原因（不发明文 done，避免误认为完整）
+            emit({"type": "error", "code": "CLIENT_DISCONNECTED",
+                  "message": "客户端断开，生成已中断"})
+        else:
+            # §8.5-S2：正常结束**必须显式发 done**，前端据此结束"生成中"。
+            emit({
+                "type": "done",
+                "usage": {
+                    "llm_calls": runner.budget.llm_calls,
+                    "tool_calls": runner.budget.tool_calls,
+                },
+                "result": result,   # 完整结果 → Go 侧同一落库路径
+            })
+
+    return result
 
 
 __all__ = ["run_turn", "Runner", "MAX_STEPS"]
