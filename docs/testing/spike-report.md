@@ -168,7 +168,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 命令 | `"C:/Users/17380/AppData/Local/Programs/Python/Python311/python.exe" -m venv ai-service/.venv` |
+| 命令 | `"<系统 Python 3.11 路径>/python.exe" -m venv ai-service/.venv`（Windows 示例：`"C:/Users/<你>/AppData/Local/Programs/Python/Python311/python.exe"`） |
 | 预期 | 用 3.11 建 venv，与容器 `python:3.11-slim` 对齐 |
 | 实际 | 计划书记录的 managed 路径 `…\binaries\python\versions\3.11.9\python.exe` **不存在**（该目录只有 3.13.12）；改用系统 `Python311`，`python --version` = **3.11.9** |
 | 结论 | **通过，但计划书事实有误**：已更正 §1.3 的解释器路径（标注"来源=实测"） |

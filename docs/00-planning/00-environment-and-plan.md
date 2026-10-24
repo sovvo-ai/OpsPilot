@@ -14,11 +14,11 @@
 
 | 检查项 | 实测结果 | 结论 |
 |---|---|---|
-| 工作目录 | `E:/学习内容/OpsPilot` | 存在 |
+| 工作目录 | `<项目根目录>`（本项目） | 存在 |
 | 目录内容 | v1 检查时为空；当前仅 `docs/`、`.workbuddy/` | 无用户已有文件，可安全初始化 |
 | Git 仓库 | `fatal: not a git repository` | 未初始化 |
 | Git 版本 | 2.55.0.windows.3 | 可用 |
-| Git 身份 | `gxt <1738069855@qq.com>` | 已配置 |
+| Git 身份 | 已配置（具体署名见提交历史） | 已配置 |
 
 ### 1.2 操作系统
 
@@ -26,7 +26,7 @@
 |---|---|
 | OS | Windows 10.0.26200（Windows 11 系）x86_64 |
 | Shell | Git Bash（POSIX）+ PowerShell 5.1 |
-| 编码风险 | 工作区路径含中文（`学习内容`）→ 全链路强制 UTF-8，文件名需规范化 |
+| 编码风险 | 工作区路径含中文（非 ASCII）→ 全链路强制 UTF-8，文件名需规范化 |
 
 ### 1.3 语言运行时
 
@@ -35,10 +35,10 @@
 | Go | 1.27.1 windows/amd64 | 系统 PATH | 可用 |
 | GOPROXY | `https://goproxy.cn,direct` | 已配国内源 | 实测 200 / 1.5s |
 | GOSUMDB | `sum.golang.org` | 默认 | 直连不通，首次 `go mod tidy` 需实测处理 |
-| Python（主） | 3.13.14 | `E:\miniconda`（conda base） | 可用，**禁止**直接 pip 安装污染 base |
-| Python（备） | 3.11.9 | `C:/Users/17380/AppData/Local/Programs/Python/Python311/python.exe`（**S1 实测**：原记录的 managed 路径不存在，已更正为系统 Python 3.11） | 与容器 `python:3.11-slim` 对齐，**用它建 venv** |
+| Python（主） | 3.13.14 | conda base（路径因机器而异） | 可用，**禁止**直接 pip 安装污染 base |
+| Python（备） | 3.11.9 | 系统 Python 3.11（路径因机器而异，如 Windows 下 `<用户目录>/AppData/Local/Programs/Python/Python311/python.exe`）（**S1 实测**：原记录的 managed 路径不存在，已更正为系统 Python 3.11） | 与容器 `python:3.11-slim` 对齐，**用它建 venv** |
 | pip | 26.0.1 | conda base | 未配置镜像源；PyPI 实测 200 但 10.5s，建议 venv 内配国内源 |
-| Node | v22.22.2 / 24.14.1 | managed / `E:\node.js` | V1 不需要；V1.1 前端用原生 JS，也不需要 |
+| Node | v22.22.2 / 24.14.1 | managed / 系统安装（路径因机器而异） | V1 不需要；V1.1 前端用原生 JS，也不需要 |
 
 已装相关包：`pydantic 2.13.2`、`pydantic-settings 2.12.0`、`uvicorn 0.51.0`、`httpx 0.28.1`、`numpy 2.5.1`。
 未装：fastapi、langgraph、sqlalchemy、psycopg、pgvector、pytest、openai。

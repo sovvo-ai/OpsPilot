@@ -1,7 +1,26 @@
 # ---- 密钥与本地环境（绝不入库）----
-deploy/.env
+# 注意：`.env` 只匹配精确文件名，`.env.prod` / `.env.dev` 这类不会被匹配，
+# 必须用通配形式覆盖，否则将来新增的环境文件会被静默提交。
 .env
+deploy/.env
 *.env.local
+*.env.*.local
+
+# 覆盖所有 .env 变体（.env.prod / .env.dev / .env.bak / .env.production ...）
+.env.*
+*/.env.*
+!**/.env.example
+!**/.env.sample
+!**/.env.template
+
+# 账户凭据类
+.git-credentials
+*.pem
+*.key
+*.p12
+id_rsa*
+.npmrc
+.pypirc
 
 # ---- Python ----
 __pycache__/
