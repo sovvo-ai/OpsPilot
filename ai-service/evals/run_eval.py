@@ -623,7 +623,21 @@ def build_report(
                 "recall_at_5": r.recall_at_5, "mrr_at_5": r.mrr_at_5,
                 "citation_id_valid": r.citation_id_valid,
                 "citation_count": len(r.citations),
+                # D2：引用明细必须入报告 —— 人工复核（A3b）要判断
+                # "这段引用是否支撑该结论"，只有 count 无法判。
+                "citations": [
+                    {
+                        "index": i + 1,
+                        "chunk_id": c.get("chunk_id"),
+                        "doc_title": c.get("doc_title"),
+                        "score": c.get("score"),
+                        "source_type": c.get("source_type"),
+                        "status": c.get("status"),
+                    }
+                    for i, c in enumerate(r.citations)
+                ],
                 "tool_calls": r.tool_calls,
+                "final_text": (r.final_text or "")[:1500],
                 "final_text_head": (r.final_text or "")[:200],
                 "error": r.error,
                 "multiturn_ab": (r.review or {}).get("multiturn_ab"),

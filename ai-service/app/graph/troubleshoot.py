@@ -39,6 +39,23 @@ _PROTO_RE = re.compile(r"\b(tcp|udp)\b", re.IGNORECASE)
 _SERVICE_RE = re.compile(r"\b([a-zA-Z][a-zA-Z0-9_.-]{1,30})\b")
 
 
+def _normalize_escapes(text: str) -> str:
+    """把**字面转义序列**还原为真实字符（S8 实测：用户从 JSON 复制粘贴的形态）。
+
+    只处理分隔类转义（`\\r\\n` / `\\n` / `\\r` / `\\t`），**不动其他内容** ——
+    避免误伤日志里真实存在的反斜杠文本（如 Windows 路径 `C:\\Users`）。
+    """
+    if not text:
+        return text
+    # 顺序重要：先 \r\n，再 \n，最后 \r / \t
+    return (
+        text.replace("\\r\\n", "\n")
+            .replace("\\n", "\n")
+            .replace("\\r", "\n")
+            .replace("\\t", " ")
+    )
+
+
 def _extract_ports(text: str) -> list[dict[str, Any]]:
     """从问句**逐行**提取端口占用信息，供 check_port_conflict 使用。
 
@@ -48,7 +65,14 @@ def _extract_ports(text: str) -> list[dict[str, Any]]:
     是给出**错误结论**（比不调用更糟）。
 
     现改为逐行提取，同端口多行**保留多条**，并解析 `service` / `pid` / `protocol`。
+
+    **S8 补充（实测发现）**：首版只处理真换行。但用户**从 JSON / 日志里复制**时
+    常带**字面转义序列**（`"8080 nginx\n8080 java"`，其中 `\n` 是两个字符）。
+    此时整行变成 `8080 nginx\n8080 java` 一行 —— `\b` 词边界在 `n8080` 处不成立，
+    只提取到 1 个端口 → 又输出"未发现冲突"（**错误结论**）。
+    故此处先把字面 `\n` / `\r\n` / `\t` 还原为真实分隔符。
     """
+    text = _normalize_escapes(text)
     ports: list[dict[str, Any]] = []
     for line in (text or "").splitlines():
         line = line.strip()
@@ -157,6 +181,17 @@ def has_log_signal(state: dict) -> bool:
     return bool(LOG_HINT.search(q) or PORT_HINT.search(q))
 
 
+def _build_clarify(question: str) -> str:
+    """零证据时的澄清文案（PRD §7.4 第三行：给出 2~3 个候选、不猜）。
+
+    与 refuse 节点的 `_CLARIFY_TEXT` **共用同一常量**，避免同一语义两处文案漂移。
+    """
+    from app.graph.final import _CLARIFY_TEXT
+
+    _ = question
+    return _CLARIFY_TEXT
+
+
 def troubleshoot_node(
     state: dict,
     *,
@@ -232,6 +267,32 @@ def troubleshoot_node(
                     degraded = True
                     if "tool_failed" not in reasons:
                         reasons.append("tool_failed")
+
+    # --- D1 证据闸门（关键）---
+    # 零证据时**不许自由生成**：早期实现会在"无 attach_log、无工具证据、无检索片段"
+    # 的情况下让模型凭空作答，绕过证据闸门 → 输出 answered 且 0 引用
+    # （实测 q025 `它起不来了怎么办？`：route=troubleshooting、answered、citations=0）。
+    # PRD §7.4 第三行：追问脱离上下文 → 给 2~3 个候选、**不猜**。
+    has_any_evidence = bool(evidence_blocks) or bool(chunks)
+    if not has_any_evidence:
+        clarify_text = _build_clarify(state.get("question", ""))
+        step = {
+            "node": "troubleshoot",
+            "duration_ms": int((time.monotonic() - t0) * 1000),
+            "input_digest": hashlib.sha256(
+                (state.get("question", "")).encode("utf-8")).hexdigest()[:16],
+            "output_summary": "zero_evidence → clarify（不调模型）",
+            "degraded": degraded,
+        }
+        if record_step:
+            record_step(step)
+        return {
+            "draft_answer": clarify_text,
+            "tool_calls": tool_calls,
+            "degraded": degraded,
+            "degrade_reasons": reasons,
+            "_force_answer_type": "clarify",   # 由 final 消费
+        }
 
     # 第 1 次 LLM（优先级高）
     draft = None

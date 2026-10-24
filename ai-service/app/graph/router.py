@@ -24,6 +24,11 @@ logger = logging.getLogger("app.graph.router")
 # 寒暄：**前缀匹配**（B3 小项修正）。
 # 早期用全锚定 `^你好[！!。]*$`，导致"你好，你是谁？"这类复合闲聊漏到 kb_qa 再被拒答，
 # 观感差。问候类改为前缀命中即短路（PRD §7.1 第 2 档本就是"强命中"语义）。
+# 特殊路由标记：需要澄清（PRD §7.4 第三行）。
+# 不是四种正式 route 之一 —— 由 router_node 转成 `_force_answer_type=clarify`
+# 并让图走到 smalltalk 终止节点（纯代码输出，零模型调用）。
+NEED_CLARIFY = "__need_clarify__"
+
 SMALLTALK_PREFIXES = (
     "你好", "您好", "hi", "hello", "哈喽", "在吗", "在么",
     "谢谢", "感谢", "多谢", "谢了",
@@ -44,15 +49,46 @@ OUT_OF_SCOPE_PATTERNS = (
 )
 
 # troubleshooting 特征
-TS_ERROR_WORDS = (
+# troubleshooting **强特征**：自身即为日志/错误证据（PRD §7.3 第一条件）
+TS_STRONG_WORDS = (
     "error", "failed", "fail", "exception", "traceback", "panic",
-    "报错", "异常", "堆栈", "崩溃", "起不来", "启动失败", "挂了",
+    "报错", "异常", "堆栈", "崩溃",
+)
+
+# troubleshooting **弱特征**：症状描述词，**必须伴随**其他证据才触发。
+#
+# **D1 修正（外部审查裁定）**：PRD §7.3 的第一条件是"包含日志/错误特征
+# （堆栈、error、failed、错误码、异常类名、**端口号 + "起不来"**等）"——
+# 裸短语"起不来"**不在**触发条件内。早期实现把"起不来"放进强命中词，
+# 导致 `"它起不来了怎么办？"` 这类**无上下文指代 + 无任何错误证据**的追问
+# 被判 troubleshooting → 节点在零证据下自由生成 → 绕过证据闸门、输出
+# answered 且 0 引用（实为应走 §7.4 clarify）。这是行为缺陷，非"擦线"。
+#
+# 现改为：弱特征需与强特征 / 错误码 / 端口线索**同时出现**才算证据。
+TS_WEAK_WORDS = (
+    "起不来", "起不来了", "启动失败", "挂了", "不通", "没反应", "打不开",
+)
+
+# 显式诊断请求（PRD §7.3 第二条件："或用户显式要求诊断"）
+#
+# **收窄说明（D1 修正）**：早期把"排查/定位/诊断"单独列为触发词，导致
+# `"Pod CrashLoopBackOff 怎么排查？"`（纯知识问答）被误判为故障排查。
+# §7.3 的原意是"要求对**某段材料**做诊断"（原文举例："帮我看看这段日志"），
+# 因此要求出现"日志/报错/这段"等**指代材料**的词，或"帮我看看/分析"这类
+# 指向具体对象的请求。泛问"怎么排查"不算。
+TS_EXPLICIT_REQUESTS = (
+    "帮我看看这段日志", "帮我分析日志", "分析这段日志", "看下这段日志",
+    "看看这段日志", "这段日志", "这段报错", "日志如下", "日志见", "日志贴在",
+    "帮我看看日志", "帮我分析下日志",
 )
 TS_ERROR_CODE = re.compile(r"\b(1[0-9]{4}|[45][0-9]{2}|1[34][0-9]|E[0-9]{4,5})\b")
 TS_PORT_HINT = re.compile(
     r"((端口|port).{0,16}(起不来|不通|占用|被占|冲突|没监听|listen|already in use))"
     r"|((占用|被占|冲突|already in use).{0,16}(端口|port))"
-    r"|(\b\d{2,5}\b.{0,20}(端口冲突|端口被占|被占用))",
+    r"|(\b\d{2,5}\b.{0,20}(端口冲突|端口被占|被占用))"
+    # PRD §7.3 原文明确列举的"**端口号 + 起不来**"（D1 修正补齐）
+    r"|(\b\d{2,5}\b.{0,10}(起不来|不通|挂了|没反应|启动失败))"
+    r"|((起不来|不通|挂了|没反应|启动失败).{0,10}\b\d{2,5}\b)",
     re.IGNORECASE,
 )
 
@@ -98,7 +134,7 @@ def _log_has_error_signal(log_text: str) -> bool:
     )
 
 
-def rule_route(question: str, attach_log: str | None = None) -> str | None:
+def rule_route(question: str, attach_log: str | None = None, history: list | None = None) -> str | None:
     """规则层判定。命中返回 route，不确定返回 None。
 
     **S7-A 修正**：判定必须**先看 `attach_log`** —— PRD §2.2-S2 的招牌场景是
@@ -133,17 +169,104 @@ def rule_route(question: str, attach_log: str | None = None) -> str | None:
     if _matches(OUT_OF_SCOPE_PATTERNS, q):
         return "out_of_scope"
 
-    # 4. troubleshooting 特征：问句含堆栈/error/错误码/端口冲突线索
+    # 4. troubleshooting 特征（PRD §7.3：日志/错误特征，或显式要求诊断）
     low = q.lower()
-    if any(w in low for w in TS_ERROR_WORDS):
+    has_strong = any(w in low for w in TS_STRONG_WORDS)
+    has_code = bool(TS_ERROR_CODE.search(q))
+    has_port = bool(TS_PORT_HINT.search(low))
+    has_weak = any(w in low for w in TS_WEAK_WORDS)
+    has_explicit = any(w in q for w in TS_EXPLICIT_REQUESTS)
+
+    # 4a. 显式诊断请求（§7.3 第二条件）。
+    #     注意：**若有 attach_log，其内容说了算**（S7-A 语义）——
+    #     "帮我看看这段日志" + 正常 INFO 日志 → kb_qa（不该进排障）；
+    #     "帮我看看这段日志" + 错误日志 → 已由前面第 0 步（attach_log 错误特征）命中。
+    #     仅在**无 attach_log** 时，显式诊断请求本身才作为触发依据。
+    if has_explicit and not attach_log:
         return "troubleshooting"
-    if TS_ERROR_CODE.search(q) and any(w in low for w in ("怎么", "如何", "为什么", "排查", "定位", "处理")):
+
+    # 4b. **裸指代硬否决**（D1）。
+    #     判据：含指代词 ∧ 无 attach_log ∧ 无错误码 ∧ 无数字端口 ∧ 无具体组件名。
+    #     返回特殊标记 `NEED_CLARIFY`，由 router_node 转成 clarify 终止（见下）。
+    #
+    #     为什么必须硬否决、不能返回 None 交给 LLM 兜底：
+    #     实测真实链路 LLM 兜底会判成 troubleshooting（conf=0.72），随后节点
+    #     因检索到**噪声片段**（top=0.3645）而"有证据"→ 自由生成 → answered + 引用，
+    #     但指代对象是模型**猜**的 —— PRD §7.4 明写"不猜"。
+    #
+    #     注意：**有上文（history 含 assistant 轮）就不算裸指代** —— 那种情况
+    #     指代对象在上下文里，FR-17 会负责改写（`那它怎么配？` + 探针历史 → 正常回答）。
+    has_context = bool(history) and any(
+        (m or {}).get("role") == "assistant" for m in (history or [])
+    )
+    if _is_bare_anaphora(q) and not (attach_log or has_code or has_port or has_context):
+        return NEED_CLARIFY
+
+    # 4c. 强特征：自身即证据
+    if has_strong:
         return "troubleshooting"
-    if TS_PORT_HINT.search(low):
+
+    # 4d. 错误码 + 疑问/排查词
+    if has_code and any(w in low for w in ("怎么", "如何", "为什么", "排查", "定位", "处理")):
+        return "troubleshooting"
+
+    # 4e. 端口线索
+    if has_port:
+        return "troubleshooting"
+
+    # 4f. 弱特征（"起不来"等）：**必须伴随**强特征/错误码/端口线索
+    #     —— 裸症状描述不足以判定为故障排查（D1 修正）
+    if has_weak and (has_strong or has_code or has_port):
         return "troubleshooting"
 
     # 5. 其余默认 kb_qa
     return "kb_qa"
+
+
+def _is_missing_material(state_or_question) -> bool:
+    """用户**要求看材料**（日志/报错片段）但**没有提供**（attach_log 为空）。
+
+    D1：`帮我看看这段日志` 却不附日志 → 属"缺输入"，§7.4 要求澄清而非
+    说"未在知识库找到资料"（后者语义是"文档缺失"，两者不同）。
+
+    接受 dict（state）或 str（question）两种入参，便于节点与规则层共用。
+    """
+    if isinstance(state_or_question, dict):
+        q = state_or_question.get("question", "")
+        attach = state_or_question.get("attach_log")
+    else:
+        q = state_or_question or ""
+        attach = None
+    if attach:
+        return False
+    return any(w in q for w in TS_EXPLICIT_REQUESTS)
+
+
+def _is_bare_anaphora(q: str) -> bool:
+    """是否为"裸指代"问句（含指代词、但没给出指代对象的证据）。
+
+    D1：`这个报错怎么解决？` / `它起不来了怎么办？` / `那是什么原因` 这类
+    追问在上文缺失时**无从判断**，§7.4 要求 clarify + 候选，不应进排障节点。
+    此处的保守判据：句首或前半句出现指代词，且**没有任何具体对象**（数字端口、
+    组件名、错误码）。
+    """
+    ANAPHORA = ("这个", "那个", "它", "他", "该", "此", "上述", "刚才", "那个东西")
+    if not any(w in q for w in ANAPHORA):
+        return False
+    # 误判防护（实测）：`该` 在"应**该**怎么用"/"**该**怎么办"里是副词，不是指代词。
+    # 仅当它作指示代词（"该服务""该问题"）时才计入 —— 用正则区分。
+    if "该" in q and not re.search(r"该(服务|组件|问题|报错|错误|进程|端口|应用|接口)", q):
+        # 去掉"该"后若不再含其他指代词，则不算裸指代
+        if not any(w in q for w in ("这个", "那个", "它", "他", "此", "上述", "刚才")):
+            return False
+    # 若句中出现了具体对象（数字/常见组件名），则不算裸指代
+    SPECIFIC = re.compile(
+        r"\b\d{2,5}\b|"                          # 端口号/错误码数字
+        r"(nginx|mysql|redis|kafka|postgres|docker|k8s|kubernetes|pod|java|python|"
+        r"tomcat|apache|es|elasticsearch|rabbitmq|zookeeper)",
+        re.IGNORECASE,
+    )
+    return not bool(SPECIFIC.search(q))
 
 
 def router_node(state: dict, *, budget: Budget, llm_call=None, record_step=None) -> dict:
@@ -158,9 +281,18 @@ def router_node(state: dict, *, budget: Budget, llm_call=None, record_step=None)
     attach_log = state.get("attach_log")
 
     # S7-A：消费 attach_log（附日志提问是 PRD §2.2-S2 的招牌场景）
-    route = rule_route(question, attach_log)
+    # D1：同时传入 history —— 有上文时指代可解析，不算裸指代
+    route = rule_route(question, attach_log, state.get("history"))
     conf = 1.0
     llm_calls_delta = 0
+
+    # D1：裸指代 → 硬否决为 clarify（**不调 LLM 兜底**）。
+    # 路由落到 smalltalk 终止节点（纯代码输出澄清文案），并标记 answer_type。
+    force_answer_type = None
+    if route == NEED_CLARIFY:
+        route = "smalltalk"
+        conf = 1.0
+        force_answer_type = "clarify"
 
     if route is None:
         # 规则不确定 → 默认 kb_qa；若提供了 llm_call 则尝试模型兜底
@@ -186,13 +318,19 @@ def router_node(state: dict, *, budget: Budget, llm_call=None, record_step=None)
         "node": "router",
         "duration_ms": int((time.monotonic() - t0) * 1000),
         "input_digest": _digest(question),
-        "output_summary": f"route={route}, conf={conf}, llm_calls={llm_calls_delta}",
+        "output_summary": (
+            f"route={route}, conf={conf}, llm_calls={llm_calls_delta}"
+            + (", force=clarify" if force_answer_type else "")
+        ),
         "degraded": False,
     }
     if record_step:
         record_step(step)
 
-    return {"route": route, "route_conf": conf, "_router_llm_calls": llm_calls_delta}
+    out = {"route": route, "route_conf": conf, "_router_llm_calls": llm_calls_delta}
+    if force_answer_type:
+        out["_force_answer_type"] = force_answer_type
+    return out
 
 
 def _parse_route(raw: str) -> str | None:

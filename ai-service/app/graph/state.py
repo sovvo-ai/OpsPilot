@@ -75,6 +75,9 @@ class State(TypedDict, total=False):
     # --- 终止 ---
     final_text: str | None
     answer_type: AnswerType
+    # 节点显式指定的 answer_type（优先于 final 的自动判定）。
+    # 用途：troubleshoot 的零证据闸门把答案定为 clarify（D1）。
+    _force_answer_type: str | None
 
     # --- 横切 ---
     degraded: bool

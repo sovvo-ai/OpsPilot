@@ -140,23 +140,88 @@ cd ai-service
 
 ### 4.1 报告结构（JSON）
 
+> **来源 = 外部审查裁定（2026-10-23，S8）**：本节 schema 以 `evals/run_eval.py` 的
+> **实际产出为准**回改。原稿用的是 `per_question` / `summary`，实跑后改为下述结构 ——
+> 新结构把 **judge 分列**（用户口径 / AI 口径 / 混合口径）落成一级字段，
+> 这正是本 spec 自己要求的纪律（§4.2 第 4 条"必须记录判定人与时间"）的落地。
+> **一次改对，两边不再漂**：后续如有变更，须同步改 `run_eval.py` 与本文件并记来源。
+
 ```json
 {
-  "meta": {"dataset_version":"v1.0","git_commit":"<sha>","run_at":"...","models":{"llm":"qwen-plus","embedding":"text-embedding-v4"},
-           "params":{"top_k":5,"min_score":0.35,"ef_search":100},"gold_reviewed":false},
-  "per_question":[{"id":"q001","recall5":1.0,"mrr":1.0,"citations":[{"chunk_id":"...","id_valid":true,"supports":null}],"latency_ms":{"retrieval":120,"total":3200},"answer_type":"answered"}],
-  "summary":{"recall5":null,"mrr5":null,"citation_id_valid_rate":null,"citation_support_rate":null,
-             "refusal_accuracy":null,"over_refusal_rate":null,"task_success":null,"multiturn_retention":null,
-             "not_comparable":[],"latency_p50_ms":null,"latency_p95_ms":null}
+  "meta": {
+    "git_commit": "<sha>",
+    "started_at": "2026-10-23T13:04:24+00:00",
+    "duration_s": 275.7,
+    "models": {"router":"qwen-flash","qa":"qwen-plus","troubleshoot":"qwen-plus",
+               "checker":"qwen-plus","final":"qwen-plus","embedding":"text-embedding-v4"},
+    "params": {"retrieval_top_k":5,"retrieval_min_score":0.35,"hnsw_ef_search":100},
+    "gold_reviewed": true,
+    "dataset": "evals/datasets/qa_golden.jsonl",
+    "total_cases": 35,
+    "seeds": {"all_completed": true, "docs": [{"name":"...","doc_id":"...","status":"completed","chunks":2}]},
+    "smoke": {"qid":"q001","got_answer_type":"answered","citations":2,"recall_at_5":1.0,"passed":true}
+  },
+
+  "metrics": {
+    "recall_at_5": 1.0, "mrr_at_5": 0.812,
+    "citation_id_validity": 1.0, "citation_id_validity_all_pass": true,
+    "refusal_accuracy": 0.875, "over_refusal_rate": 0.0,
+    "citation_support_rate": "NOT RUN", "task_success_rate": "NOT RUN",
+    "multiturn_retention": 1.0,
+    "latency": {"kb_qa_p50_ms":3163,"kb_qa_p95_ms":7360,
+                "log_diag_p50_ms":8046,"log_diag_p95_ms":14671,
+                "overall_p50_ms":3500,"overall_p95_ms":14000},
+    "thresholds": {"recall_at_5":0.75,"mrr_at_5":0.60,"citation_support_rate":0.90,
+                   "refusal_accuracy":0.85,"over_refusal_rate":0.15,"task_success_rate":0.70,
+                   "multiturn_retention":0.90,"citation_id_validity":1.00,
+                   "latency_kb_qa_p95_ms":8000,"latency_log_diag_p95_ms":25000}
+  },
+
+  "metrics_by_judge": {
+    "用户口径（user_recheck=true，判定人留空）": {"count":5,"citation_support_rate":"NOT RUN",
+                                                 "pending_qids":["q028","q029","m001","q001","q008"]},
+    "AI 口径（judge=AI）":                    {"count":15,"citation_support_rate":1.0},
+    "混合口径（AI 已判 + 用户已填）":           {"count":15,"citation_support_rate":1.0}
+  },
+
+  "a3b_reviews": [
+    {"qid":"q028","category":"citation_risk","reason":"引用风险题：最易出现'引用存在但不支持结论'",
+     "user_recheck":true,"judge":null,"judged_at":null,"verdict":null},
+    {"qid":"q002","category":"kb_qa","reason":"常规抽检",
+     "user_recheck":false,"judge":"AI","judged_at":"2026-10-23T13:09:00+00:00","verdict":"supported"}
+  ],
+
+  "cases": [
+    {"qid":"q001","category":"kb_qa","question":"...","should_answer":true,
+     "expected_answer_type":"answered","got_answer_type":"answered",
+     "route":"kb_qa","node_path":["router","retrieval","evidence","final"],
+     "duration_ms":5000,"latency_ms":7360,
+     "retrieval_top_score":0.779,"retrieved_chunk_ids":["<uuid>","..."],
+     "recall_at_5":1.0,"mrr_at_5":1.0,"citation_id_valid":true,"citation_count":2,
+     "tool_calls":[],"final_text_head":"...","error":null,
+     "multiturn_ab":{"recall_a":1.0,"recall_b":1.0,"b_triggered_rewrite":false,
+                     "retr_a":["..."],"retr_b":["..."]}}
+  ]
 }
 ```
 
+**字段口径说明**（防未来误读）：
+
+| 字段 | 说明 |
+|---|---|
+| `metrics` | 7 项指标 + 延迟 + 阈值。**引用 ID 有效率独立于 7 项**（硬线，`citation_id_validity`） |
+| `metrics_by_judge` | **禁止只给合并值**。三口径独立输出；用户未填时其值为 `NOT RUN` |
+| `a3b_reviews` | 20 条抽检。`user_recheck=true` 的 5 条 `judge`/`judged_at`/`verdict` 留空等用户填 |
+| `cases[].multiturn_ab` | 仅多轮题有值，供 §3 保持率复算（`Σrecall_a / Σrecall_b`） |
+| 未跑指标 | 一律字符串 `"NOT RUN"`，**不用 null**（`null` 易被误读为"算出来是空"） |
+
 ### 4.2 真实性规则
 
-1. 未跑的指标值一律 `null` 并在 Markdown 摘要写 **`NOT RUN`**，禁止填 0、禁止填目标值。
+1. 未跑的指标一律输出 **`NOT RUN`**（字符串）并在 Markdown 摘要同样标注，禁止填 0、禁止填目标值、禁止推算。
 2. `meta.gold_reviewed=false` 时，摘要顶部必须标注 **`标注未复核`**。
 3. 报告必须含 `git_commit`（A12 要求）。
 4. 人工判定项（内容支持率、任务成功率）必须记录判定人与时间，不接受"看起来对"。
+5. **阈值未达标不许调数据集凑数**；调参记录必须写进报告"校准日志"。
 
 ---
 

@@ -84,8 +84,80 @@ cd ai-service && .venv/Scripts/python.exe -m evals.run_eval
 
 | 项 | 观察 | 处置 |
 |---|---|---|
-| `q025`（ambiguous，追问脱离上下文） | 期望 `refusal`，实际 `answered`，且被路由到 troubleshooting 调用了 `check_port_conflict` | **未调数据集**。拒答正确率因此为 0.875（7/8），仍在阈值内。记录待查：ambiguous 类追问的上下文缺失判定可加强 |
+| `q025`（ambiguous，追问脱离上下文） | 期望 `refusal`，实际 `answered`，且被路由到 troubleshooting 调用了 `check_port_conflict` | **审查裁定为 D1 行为缺陷（非"擦线"）**，已修 —— 见 §1.6。**未调数据集** |
 | `src_retrieved_chunk_ids` | run 接口原未暴露完整检索集，Recall 只能用 citations 近似（会低估） | 新增 `0002` 迁移 + Go 侧落库，**口径修正而非调参** |
+
+---
+
+### 1.6 D1：故障排查路由的证据门槛（外部审查裁定）
+
+| 项 | 内容 |
+|---|---|
+| 缺陷 | `它起不来了怎么办？`（q025）→ `route=troubleshooting`、`answered`、引用为模型自选。**指代对象是模型猜的** |
+| 根因链 | ① 词典"起不来"**单独**命中 troubleshooting 规则（PRD §7.3 要求的是日志/错误特征或**显式诊断请求**，裸短语不在内）→ ② troubleshoot 节点在无 `attach_log` 时因检索到**噪声片段**（top=0.3645）而"有证据"，自由生成 → ③ 绕过证据闸门。§7.4 第三行明写"追问脱离上下文 → 给 2~3 个候选，**不猜**" |
+| 性质 | **行为缺陷**，不是阈值擦线 —— 修行为，**未改题目** |
+
+**修法（三层，低风险）**：
+
+1. **路由层**（`router.py`）
+   - 词表拆分：`TS_STRONG_WORDS`（error/exception/traceback/报错/异常… 自身即证据）vs `TS_WEAK_WORDS`（起不来/挂了/不通… **必须伴随**强特征/错误码/端口线索）。
+   - `TS_PORT_HINT` 补齐 PRD §7.3 原文列举的"**端口号 + 起不来**"。
+   - `TS_EXPLICIT_REQUESTS` 收窄为"要求看**某段材料**"（`排查/定位` 单独不再触发，否则 `Pod CrashLoopBackOff 怎么排查？` 会被误判）；**有 `attach_log` 时以内容为准**（保 S7-A 语义）。
+   - 新增 `NEED_CLARIFY` 硬否决 + `_is_bare_anaphora()`（含指代词 ∧ 无 attach_log/错误码/端口号/上下文 assistant 轮）。
+   - 易错防护：`该` 在"应**该**怎么用"里是副词不是指代词（实测误判 `日志级别应该怎么用？`，已用正则区分）。
+2. **节点层**（`troubleshoot.py`）：新增**零证据闸门** —— 无工具证据 ∧ 无 chunks → 输出 clarify 且**不调模型**，带 `_force_answer_type="clarify"`。
+3. **终止层**（`final.py`）：`refuse_node` 区分 §7.4 的两种"拒绝"（**裸指代 → clarify** vs **文档缺失 → refusal**，早期混为一谈）；`smalltalk_node` 支持 clarify；新增共用常量 `_CLARIFY_TEXT`（防两处文案漂移）。
+
+> **关键设计决定（勿回退）**：裸指代必须**硬否决**，不能返回 `None` 交给 LLM 兜底 —— 实测兜底会判成 troubleshooting（conf=0.72），随后因噪声片段而"有证据"，仍然在猜。
+
+**修复前后实测对比**（Python httpx，走对外接口）：
+
+| 输入 | 修复前 | 修复后 |
+|---|---|---|
+| `它起不来了怎么办？`（q025） | `route=troubleshooting`、**answered**、引用为模型自选 | `route=smalltalk`、**clarify**、0 引用、给出 3 条候选 |
+| `这个报错怎么解决？`（q026） | `route=troubleshooting` | **clarify** |
+
+**回归结果（9 条 = no_doc×6 + ambiguous×3）**：
+
+```
+OK  q019~q024  [no_doc]     → refusal（0 引用）
+OK  q025       [ambiguous]  → clarify    ← 修复目标
+OK  q026       [ambiguous]  → clarify
+OK  q027       [ambiguous]  → answered   ← 该条 should_answer=true，本就应作答
+9/9 正确
+```
+
+**对照（防误伤，这是修复的风险面）**：
+
+| 对照 | 结果 |
+|---|---|
+| **A**：有上下文的多轮追问**不得**被判 clarify | m001~m005 **全部** `answered` + `rewritten=True` ✅ |
+| **B**：有证据的排障问句**仍须**进 troubleshooting | `8080 起不来了怎么办？` / `服务报 error 起不来` / `日志报 exception` → 全部 `route=troubleshooting` ✅ |
+
+**回归用例**：`tests/test_graph.py::TestD1EvidenceGate`（12 例，含"纯知识问答不被误判"与"零证据不调模型"）。
+
+---
+
+### 1.7 D2：证据链字段未接通（外部审查裁定）
+
+| 项 | 内容 |
+|---|---|
+| 缺陷 | 报告里 28/28 answered 案例 `retrieval_top_score=0.0`，而 `retrieved_chunk_ids` 明明有值 |
+| 根因 | `GetRun`（**读接口**）根本没返回 `retrieval_top_score` / `rewritten_query` —— 它们只存在于 `TurnResult`（写路径），**未落库**。`retrieval_top_score` 只出现在写路径的类型定义里 |
+| 影响 | 不影响本次指标（Recall 用 `retrieved_chunk_ids` 算），但这是 **demo 轨迹与 A3b 人工复核的证据链**，必须可回查 |
+| 修法 | `0003` 迁移加两列 → `RunTrace` 加字段 → 写入/读出 → `nullFloat`/`nullString` 处理 NULL → `messages.go` 传值 |
+
+**顺带补的同类缺口**：报告 `cases[]` 此前**只有 `citation_count`，没有引用明细** —— 人工复核要判断"这段引用是否支撑该结论"时无从下手。现补入 `citations[]`（`index`/`chunk_id`/`doc_title`/`score`/`source_type`/`status`）与完整 `final_text`（1.5KB 上限）。
+
+**实测对比**：
+
+| 字段 | 修复前 | 修复后 |
+|---|---|---|
+| `retrieval_top_score` | `0.0`（28/28 案例） | `0.779` / `0.7272` / `0.6956`（真实值） |
+| `rewritten_query` | 字段不存在 | `None`（未改写）／改写时返回实际查询 |
+| `cases[].citations` | 不存在 | 含 `index`/`chunk_id`/`doc_title`/`score` 明细 |
+
+> **规格同步**：`rag-eval-spec.md` §4.1 的报告 JSON schema 已按实际产出回改（**来源 = 外部审查裁定**），并注明"一次改对，两边不再漂"。
 
 ---
 

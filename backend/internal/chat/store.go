@@ -206,6 +206,9 @@ type RunTrace struct {
 	Steps             []StepInfo
 	ToolCalls         []ToolCallRecord
 	RetrievedChunkIDs []string
+	// D2：证据链字段（此前只存在于 TurnResult，未落库 → 读接口拿不到）
+	RetrievalTopScore float64
+	RewrittenQuery    *string
 	LLMCalls          int
 	ToolCallsCount    int
 	PromptTokens      int
@@ -245,13 +248,13 @@ func InsertAssistantWithRun(
 		     id, session_id, message_id, owner_id, route,
 		     llm_calls, tool_calls, prompt_tokens, completion_tokens,
 		     degraded, degrade_reasons, terminated_reason, node_path, preempted, duration_ms,
-		     retrieved_chunk_ids
-		 ) VALUES ($1,$2,$3,$4,$5, $6,$7,$8,$9, $10,$11,$12,$13,$14,$15, $16)`,
+		     retrieved_chunk_ids, retrieval_top_score, rewritten_query
+		 ) VALUES ($1,$2,$3,$4,$5, $6,$7,$8,$9, $10,$11,$12,$13,$14,$15, $16, $17,$18)`,
 		trace.RunID, trace.SessionID, trace.MessageID, trace.OwnerID, trace.Route,
 		trace.LLMCalls, trace.ToolCallsCount, trace.PromptTokens, trace.CompletionTokens,
 		trace.Degraded, pq.Array(trace.DegradeReasons), trace.TerminatedReason,
 		pq.Array(trace.NodePath), pq.Array(trace.Preempted), trace.DurationMS,
-		pq.Array(trace.RetrievedChunkIDs),
+		pq.Array(trace.RetrievedChunkIDs), trace.RetrievalTopScore, trace.RewrittenQuery,
 	); err != nil {
 		return "", err
 	}
@@ -297,16 +300,19 @@ func GetRun(db *sql.DB, ownerID, runID string) (map[string]any, error) {
 		llmCalls, toolCalls, durationMS     int
 		degraded                            bool
 		createdAt                           time.Time
+		// D2：可空（历史行为 NULL）
+		topScore       sql.NullFloat64
+		rewrittenQuery sql.NullString
 	)
 	err := db.QueryRow(
 		`SELECT route, llm_calls, tool_calls, degraded, degrade_reasons,
 		        terminated_reason, node_path, preempted, duration_ms, created_at,
-		        retrieved_chunk_ids
+		        retrieved_chunk_ids, retrieval_top_score, rewritten_query
 		   FROM agent_runs WHERE id = $1 AND owner_id = $2`,
 		runID, ownerID,
 	).Scan(&route, &llmCalls, &toolCalls, &degraded, pq.Array(&degradeReasons),
 		&terminatedReason, pq.Array(&nodePath), pq.Array(&preempted), &durationMS, &createdAt,
-		pq.Array(&retrievedChunkIDs))
+		pq.Array(&retrievedChunkIDs), &topScore, &rewrittenQuery)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, &HTTPError{Status: http.StatusNotFound, Code: "NOT_FOUND", Msg: "轨迹不存在"}
 	}
@@ -363,7 +369,26 @@ func GetRun(db *sql.DB, ownerID, runID string) (map[string]any, error) {
 		"steps":               steps,
 		"tool_call_records":   toolCallRecords,
 		"retrieved_chunk_ids": retrievedChunkIDs,
+		// D2：证据链字段，供 demo 轨迹与 A3b 人工复核
+		"retrieval_top_score": nullFloat(topScore),
+		"rewritten_query":     nullString(rewrittenQuery),
 	}, nil
+}
+
+// nullFloat 把 sql.NullFloat64 转成 JSON 友好的值（NULL → nil）。
+func nullFloat(v sql.NullFloat64) any {
+	if !v.Valid {
+		return nil
+	}
+	return v.Float64
+}
+
+// nullString 把 sql.NullString 转成 JSON 友好的值（NULL → nil）。
+func nullString(v sql.NullString) any {
+	if !v.Valid {
+		return nil
+	}
+	return v.String
 }
 
 // getToolCallRecords 读该 run 的工具审计行。

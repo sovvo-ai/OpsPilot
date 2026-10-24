@@ -128,6 +128,8 @@ func AskMessage(c *gin.Context) {
 		Steps:             result.Steps,
 		ToolCalls:         result.ToolCallRecords,
 		RetrievedChunkIDs: result.RetrievedChunkIDs,
+		RetrievalTopScore: result.RetrievalTopScore,
+		RewrittenQuery:    result.RewrittenQuery,
 		LLMCalls:          tokens("llm_calls"),
 		ToolCallsCount:    tokens("tool_calls"),
 		PromptTokens:      tokens("prompt_tokens"),

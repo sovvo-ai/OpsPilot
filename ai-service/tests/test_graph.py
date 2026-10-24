@@ -520,6 +520,104 @@ class TestToolWiring:
 
 
 # ---------------------------------------------------------------------------
+# D1：故障排查路由的证据门槛 + 零证据闸门
+# ---------------------------------------------------------------------------
+
+
+class TestD1EvidenceGate:
+    """D1 回归（外部审查裁定）：无证据不得进排障、零证据不得自由生成。
+
+    真实缺陷：`它起不来了怎么办？` 因裸短语"起不来"命中 troubleshooting 规则，
+    节点在无 attach_log、无引用的情况下自由生成 → `answered` 且 0 引用，
+    绕过了证据闸门。PRD §7.3 的触发条件是"日志/错误特征 或 显式诊断请求"，
+    裸症状描述不在内；§7.4 第三行要求这种情况给 **clarify**（2~3 个候选、不猜）。
+    """
+
+    @pytest.mark.parametrize(
+        "question,reason",
+        [
+            ("它起不来了怎么办？", "裸指代 + 弱症状，无任何证据"),
+            ("这个报错怎么解决？", "裸指代，无证据"),
+            ("服务起不来了", "裸症状，无证据"),
+            ("页面打不开", "裸症状，无证据"),
+        ],
+    )
+    def test_no_evidence_symptom_not_routed_to_ts(self, question, reason):
+        """裸症状 + 无证据 → **不得**由规则层判为 troubleshooting。"""
+        from app.graph.router import rule_route
+
+        assert rule_route(question) != "troubleshooting", f"{question!r}（{reason}）应落到默认档"
+
+    @pytest.mark.parametrize(
+        "question",
+        [
+            "8080 起不来了怎么办？",     # PRD §7.3 原文：端口号 + 起不来
+            "服务报 error 起不来",       # 强特征 + 弱特征
+            "日志报 exception",         # 强特征
+            "ERROR 1040 起不来",        # 错误码 + 弱特征
+        ],
+    )
+    def test_evidence_still_routes_to_ts(self, question):
+        """有证据时仍必须进排障（D1 修复不得误伤）。"""
+        from app.graph.router import rule_route
+
+        assert rule_route(question) == "troubleshooting", f"{question!r} 有证据应进排障"
+
+    @pytest.mark.parametrize(
+        "question",
+        [
+            "Pod CrashLoopBackOff 怎么排查？",   # 纯知识问答（A5 既有用例）
+            "Nginx 502 是什么原因",
+            "MySQL 索引失效的原因",
+            "怎么配置 livenessProbe",
+        ],
+    )
+    def test_pure_knowledge_not_misrouted_to_ts(self, question):
+        """纯知识问答不得被误判为排障（"排查"二字不是排障证据）。"""
+        from app.graph.router import rule_route
+
+        assert rule_route(question) == "kb_qa", f"{question!r} 是知识问答"
+
+    def test_zero_evidence_node_outputs_clarify_not_answered(self, monkeypatch):
+        """**节点级**：零证据 → clarify，且**不调模型**（防自由生成）。"""
+        patch_cfg(monkeypatch)
+        llm = CountingLLM()
+        r = run(
+            "它起不来了怎么办？",
+            llm_call=llm,
+            retrieve_fn=lambda o, q, c: [],   # 检索无结果
+        )
+        assert r["answer_type"] == "clarify", f"零证据应 clarify，实际 {r['answer_type']}"
+        assert r["citations"] == [], "澄清不得携带引用"
+        assert "tool_calls" not in llm.roles(), f"零证据不该调模型：{llm.roles()}"
+
+    def test_zero_evidence_ts_route_also_clarifies(self, monkeypatch):
+        """即使被路由到 troubleshoot（如显式诊断请求但没给材料）→ 仍 clarify。"""
+        patch_cfg(monkeypatch)
+        from app.tools import ToolExecutor
+
+        ex = ToolExecutor()
+        r = run(
+            "帮我看看这段日志",         # 显式诊断请求，但 attach_log 为空
+            llm_call=CountingLLM(),
+            tool_executor=ex,
+            retrieve_fn=lambda o, q, c: [],
+        )
+        assert r["answer_type"] == "clarify", f"实际 {r['answer_type']}"
+        assert r["citations"] == []
+
+    def test_clarify_text_gives_candidates(self, monkeypatch):
+        """§7.4 要求给 2~3 个候选（不是干巴巴的"无法回答"）。"""
+        patch_cfg(monkeypatch)
+        r = run("它起不来了怎么办？", llm_call=CountingLLM(), retrieve_fn=lambda o, q, c: [])
+        text = r["final_text"]
+        # 至少给出 3 条编号候选
+        assert text.count("\n1.") >= 1 and "2." in text and "3." in text, (
+            f"澄清文案应含候选清单，实际：{text[:200]}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # S7-A：router 消费 attach_log（招牌场景）
 # ---------------------------------------------------------------------------
 
@@ -554,8 +652,12 @@ class TestRouterConsumesAttachLog:
         """规则层直测（不经过图）：attach_log 参与判定。"""
         from app.graph.router import rule_route
 
+        # 附错误日志 → 排障
         assert rule_route("帮我看看这段日志", self.ERROR_LOG) == "troubleshooting"
-        assert rule_route("帮我看看这段日志", None) == "kb_qa"
+        # 无 attach_log 但显式要求诊断 → 进排障节点（由节点闸门决定澄清/作答）
+        # D1 修正：早期此处期望 kb_qa，但"说要看日志却没给日志"属**缺输入**，
+        # 应进排障节点后由零证据闸门输出 clarify（PRD §7.4 第三行）。
+        assert rule_route("帮我看看这段日志", None) == "troubleshooting"
 
     def test_normal_info_log_not_misrouted(self):
         """正常 INFO 日志不得被误判为故障排查。"""
@@ -659,6 +761,36 @@ class TestPortExtraction:
         from app.graph.troubleshoot import _extract_ports
 
         assert _extract_ports("服务起不来") == [{"port": 8080, "protocol": "tcp"}]
+
+    @pytest.mark.parametrize(
+        "text,note",
+        [
+            ("8080 nginx 正在监听\n8080 java 也在用", "真换行"),
+            ("8080 nginx 正在监听\\n8080 java 也在用", "字面 \\n（从 JSON 复制）"),
+            ("8080/tcp nginx\\r\\n8080/tcp java", "字面 \\r\\n"),
+        ],
+    )
+    def test_same_port_two_entries_across_escapes(self, text, note):
+        """S8：字面转义序列也必须能识别为两行同端口（实测真实链路踩到）。
+
+        真实缺陷：用户从 JSON/日志复制时带**字面 `\\n`**，整行变成
+        `8080 nginx\\n8080 java` —— `\\b` 词边界在 `n8080` 处不成立，
+        只提取到 1 个端口 → 又输出"未发现冲突"（错误结论）。
+        """
+        from app.graph.troubleshoot import _extract_ports
+        from app.tools.check_port_conflict import check_port_conflict
+
+        ports = _extract_ports(text)
+        assert len(ports) == 2, f"{note}: 应提取 2 条，实际 {ports}"
+        out = check_port_conflict({"ports": ports})
+        assert len(out["conflicts"]) == 1, f"{note}: 应报冲突，实际 {out['summary']}"
+
+    def test_windows_path_not_mangled(self):
+        """转义还原只处理分隔类，不误伤 Windows 路径。"""
+        from app.graph.troubleshoot import _normalize_escapes
+
+        # 单个反斜杠的路径（如日志里出现 C:\Users\app）不应被改动
+        assert _normalize_escapes(r"C:\Users\app\config") == r"C:\Users\app\config"
 
     def test_troubleshoot_node_reports_real_conflict(self, monkeypatch):
         """节点级：端口冲突问句 → 工具证据里出现真实冲突（非"未发现"）。"""
