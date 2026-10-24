@@ -120,7 +120,11 @@ make up        # = 上面那条 docker compose 命令
 ```
 </details>
 
-### 3. 建 Python 环境并跑迁移
+### 3. 建 Python 环境（可选，仅本地跑评测/测试时需要）
+
+> **docker compose 起栈时迁移已自动执行**（backend 启动时调用 `MigrateUp()`，按
+> `backend/migrations/*.up.sql` 执行未应用的迁移）—— **正常启动无需手动 migrate**。
+> 本节只在你要**在本机跑 pytest / 评测脚本**时才需要。
 
 ```bash
 # 用 Python 3.11 建 venv（路径按你的实际安装调整）
@@ -128,12 +132,15 @@ make up        # = 上面那条 docker compose 命令
 
 # 装依赖
 ai-service/.venv/Scripts/python.exe -m pip install -r ai-service/requirements.txt
-
-# 执行数据库迁移（0001~0003）
-ai-service/.venv/Scripts/python.exe scripts/run_migrate.py up
 ```
 
-<details><summary>装了 make 的话，第 3 步的迁移等价于 <code>make migrate</code></summary>
+**手动迁移**（仅当你要单独控制迁移、或在 backend 未启动时预建表）：
+
+```bash
+ai-service/.venv/Scripts/python.exe scripts/run_migrate.py up   # 0001~0003
+```
+
+<details><summary>装了 make 的话，手动迁移等价于 <code>make migrate</code></summary>
 
 ```bash
 make migrate
@@ -202,6 +209,9 @@ cd ai-service
 | [`docs/testing/s9-ui-smoke.md`](docs/testing/s9-ui-smoke.md) | S9 前端冒烟（U1–U10 + UI-10 + auth 豁免反向用例，38/38） |
 | [`docs/testing/s8v3-eval-report.md`](docs/testing/s8v3-eval-report.md) | v3 评测报告（含未达标项与残留分析） |
 | [`docs/testing/v3_residual_notes.md`](docs/testing/v3_residual_notes.md) | 残留与已知限制（检测器方差、V2 候选） |
+| [`docs/testing/s9-demo-run-evidence.md`](docs/testing/s9-demo-run-evidence.md) | 3 分钟 demo 实跑存证（11 段截图 + 文本） |
+| [`docs/testing/s9-stranger-walkthrough.md`](docs/testing/s9-stranger-walkthrough.md) | 陌生人路径体检（clone → up → 冒烟全程实测） |
+| [`LICENSE`](LICENSE) | MIT License（© 2026 gxt） |
 
 ## 测试口径（两种口径，都贴命令原文）
 

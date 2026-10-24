@@ -18,7 +18,13 @@
 | 1 | `cp deploy/.env.example deploy/.env` | `.env.example` 存在，含 `DASHSCOPE_API_KEY` 占位 | ✅ |
 | 2 | `docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build` | 起栈成功；**从 down -v 到两个服务 ready = 14s** | ✅ |
 | 3 | `python -m venv ai-service/.venv` + `pip install -r requirements.txt` | venv 为 Python 3.11.9；`requirements.txt` 存在 | ✅ |
-| 3b | `python scripts/run_migrate.py up` | 输出 `迁移 up 成功` | ✅ |
+| 3b | （迁移）—— 见下方补充 | `schema_migrations` 由 backend 启动时**自动**建好（0001~0003） | ✅ |
+
+> **补充（2026-10-24 二次核实）**：第 3 步**不需要手动迁移**。实测 `down -v` 后只执行
+> `docker compose up -d`，backend 启动时自动调用 `MigrateUp()`，`schema_migrations` 三行齐备，
+> **直接跑 smoke 即通过**（未手动执行 `run_migrate.py`）。
+> 因此 README 第 3 步已标注为「**可选，仅本地跑评测/测试时需要**」。
+> 手动迁移仅在需要单独控制迁移、或 backend 未启动时预建表时使用。
 | 4 | `bash scripts/smoke_test.sh` | 见下方原文；**通过** | ✅ |
 | 5 | `python -m evals.run_eval`（可选） | 报告路径在 README 已写明 | ✅ |
 
