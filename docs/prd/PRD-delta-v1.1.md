@@ -71,12 +71,47 @@
 
 | # | 赌注 | 判定口径（机器可测） | 基线值 | 达标线 |
 |---|---|---|---|---|
-| **B1** | critic 后 overreach **流出句数 = 0** | `detect_citation_overreach(final_text, citations, chunks)` 返回的条目数（对 `CRITIC_ENABLED=on` 的全部作答统计） | 5 次采样 `clean: 0/5`（即每次都 ≥1 处命中） | **0 处**，且不出现"删空答案"副作用 |
-| **B2** | A3b 用户口径支持率**不降** | 同 20 条抽样口径（`a3b_user_review` 体系）+ 新增 critic 专项集 5–8 题 | v3 = 1.000（5/5，覆盖面有限，见 §5 风险） | **≥ 基线**，且被 critic 剥离的句子经人工复核确认"确实不该保留" |
-| **B3** | kb_qa 主链延迟**零劣化** | `scripts/kb_qa_latency.py`，同 10 题 | 方案 A 确认 = 7813ms（P95）；全量 35 题 = 6640ms | **不劣于基线**（kb_qa 路径**不启用 critic**，故理论应为 0 影响；此项验证"真的没被拖慢"） |
-| **B4** | troubleshoot P95 **仍 ≤ 25s** | 同 `rag-eval-spec.md:90` 口径（log_diag P95 ≤ 25000ms） | v3 实测值见 `2026-10-24T1435_v3-final.json` | **≤ 25000ms** |
+| **B1a** | **机器回归线**：detector 命中 = 0 | `detect_citation_overreach(final_text, citations, chunks)` 返回条目数（对 `CRITIC_ENABLED=on` 的全部作答统计） | 5 次采样 `clean: 0/5`（每次 ≥1 处命中） | **0 处**，且不出现"删空答案"副作用。⚠️ **存在撤标盲区，单独不构成收口证明** |
+| **B1b** | **真收口证明**：人工复核越界句 = 0 且误剥离句 = 0 | 专项集 `critic-on` 的：① **全部含 `[n]` 的句子**；② **全部被降级改标的句子** —— 两者合并后**逐句人工复核** | v3 人工口径 5/5（仅 5 句，覆盖面极窄） | **越界句 = 0** 且 **误剥离句 = 0** |
+| **B2** | A3b 用户口径支持率**不降** | 同 20 条抽样口径（`a3b_user_review` 体系）+ 专项集 | v3 = 1.000（5/5，覆盖面有限，见 §5 R2） | **≥ 基线**，且被 critic 剥离的句子经人工复核确认"确实不该保留" |
+| **B3** | kb_qa 主链延迟**零劣化** | **同次对照跑内** `CRITIC_ENABLED=on` vs `off` 的 kb_qa P95 差值（见 §2.2） | — | **on 不劣于 off**（同次跑内比较） |
+| **B4** | troubleshoot P95 **仍 ≤ 25s** | 同 `rag-eval-spec.md:90` 口径（log_diag P95 ≤ 25000ms） | 见 `2026-10-24T1435_v3-final.json` | **≤ 25000ms** |
 
-### 2.1 赌注的诚实性说明
+### 2.1 B1 为什么必须拆成 a/b 两行（P1 补丁）
+
+**原 B1 有"自我裁判"漏洞。** 推理链：
+
+1. detector（`detect_citation_overreach`）**只扫含 `[n]` 的句子**（`chat.py:311-314`：`if not marks: continue`）。
+2. critic 的处置之一，恰恰是**撤掉 `[n]`**（`needs_downgrade_label` → 移除引用 + 追加「模型通用知识，无 KB 出处」）。
+3. 于是：**所有可疑句都被降级改标后，detector 机械地报告 0 命中，B1 达标。**
+
+> **但答案里那句话还在，只是不再挂引用了 —— 越界并没有被消除，只是被改了个标签。**
+> 这是"**评测被自己机制 gamed**"的教科书案例。
+
+**拆法**：
+
+| 口径 | 能证明什么 | 不能证明什么 |
+|---|---|---|
+| **B1a（机器）** | 没有"带引用却无依据"的句子流出 | ❌ 不能证明"被撤标的句子本身没问题" —— 撤标即隐身 |
+| **B1b（人工）** | 逐句复核：确实无越界、且没有误伤正确内容 | 依赖人工投入，不可每次 CI 跑 |
+
+**两者并联才算收口**：B1a 是**可回归的回归线**（每次评测都跑），B1b 是**一次性真证明**（本迭代的验收依据）。
+**只报 B1a = 0 命中就宣称"引用越界已根治"，属于口径游戏，禁止。**
+
+### 2.2 B3 的双基线歧义（小项 1 修正）
+
+原写法同时列了 7813ms（S9 方案A 简洁度纪律后的确认值，10 题单跑）与 6640ms（全量 35 题），
+**两者不可直接比较** —— 跨跑数字受模型时延漂移影响（log_diag 上已领教过，见
+`v3_residual_notes.md` 第 63-64 行的口径说明）。
+
+**判定改为**：**同次对照跑内** `CRITIC_ENABLED=on` vs `off` 的对比（同 commit、同参数、背靠背跑）。
+跨跑的历史数字（7813 / 6640）**只作参考背景，不作判定基线**。
+
+理由：kb_qa 路径本就不启用 critic（§3.2），理论上差值为 0。
+此赌注真正要验的是"**真的没被拖慢**"（例如条件边判断、state 拷贝等间接开销），
+而同次对照是唯一能排除时延漂移的比法。
+
+### 2.3 赌注的诚实性说明
 
 - **B2 的基线是弱基线**：1.000 只覆盖"被抽中的 5 条结论句"，不等于"全部句子干净"
   （`v3_residual_notes.md` 第 20 行明写）。所以 B2 的真实含义是"**不退化**"，
@@ -96,7 +131,12 @@
 | `route = troubleshooting` | 故障排查路径。这是 overreach 的高发场景（参数名/探针名密集） |
 | **超长答案**（`len(final_text) > 800 字`） | 长答案更可能夹带片段外内容；短答案逐句审查性价比低 |
 
-**判定发生在 `final` 产出之后**（critic 是生成后审查，不是生成前约束 —— 见 ADR §1）。
+**判定发生在 `final` 之前**（SPIKE 项 3 实测修正，见 ADR §1.1）：
+critic 审查 `draft_answer` 并输出处置，结果通过 state 传给 `final`，
+使 `final` 在生成时排除被剥离的句子 —— 这样**流式输出天然干净**（不会出现"已经发给用户又被撤回"）。
+
+> ⚠️ 原写作"final 产出之后"，**与 `reserved_for_final` 不变量冲突**：
+> 排在 final 之后的节点拿不到预留额度，必然被抢占。SPIKE 实测已修正。
 
 ### 3.2 `kb_qa` 直通路径**明确不启用**，理由必须写清
 
@@ -119,6 +159,25 @@
 | 检索层主题过滤 / rewrite 二次收敛 | V2-1 / V2-2（`v3_residual_notes.md` 残留 2，会影响 Recall） |
 | 自动改写答案内容（除剥离/改标） | 本迭代只做三态处置，不做"重写" |
 
+#### 3.3.1 顺带收口的展示瑕疵（小项 3）
+
+`a3b_user_review_v3.md` q029 的判定备注记录了这处瑕疵：
+
+> 残留小瑕疵：清单生成器仍按位置标"引用 1"而正文角标是 [3]，
+> 契约要求按 index 展示——清单脚本待改（不改变本条判定）。
+
+**归入阶段 3 的 trace / 展示修复清单**，与 critic 的角标展示一并处理：
+
+| # | 修复项 | 位置 |
+|---|---|---|
+| S1 | `run_steps` 新增 `agent_id` 列（迁移 **0004**） | `backend/migrations/` |
+| S2 | 前端轨迹抽屉加泳道 / agent 标注（UI 最小改动） | `backend/internal/web/static/` |
+| **S3** | **清单/脚本按 `citations[].index` 展示，不用数组位置**（q029 瑕疵） | `scripts/a3b_*` 相关脚本 |
+| S4 | critic 的三态处置在 trace 中可见（含"疑似错位引用"提示） | `run_steps` + 前端 |
+
+> S3 的口径与 `chat.py` 的 S9 修正（按 index 升序 + 显式 index 字段）一致 —— 前端已改，
+> **脚本侧未改**，属同一契约的另一半。
+
 ### 3.4 critic 专项集（新增，独立于主集）
 
 | 项 | 规定 |
@@ -127,6 +186,49 @@
 | 标注 | 每题标 `overreach_sensitive=true` + 期望行为 |
 | 用途 | **仅本迭代回归** |
 | 是否进 README 七指标 | **否**。README 的七指标口径不变，专集结果单列在 `v11-critic-eval-report.md` |
+
+#### 3.4.1 必带 ground truth，且每题标"越界诱饵点"（P1 补丁）
+
+**没有 ground truth 的专集，B1b 没有对照物** —— 人工复核会变成"看一句判一句"的自由裁量，
+无法回答"该抓的抓到了吗、不该删的删了吗"。
+
+每题的标注结构（阶段 2 产出，进 `ai-service/evals/datasets/critic_golden.jsonl`）：
+
+```json
+{
+  "qid": "c001",
+  "question": "Pod 一直 CrashLoopBackOff 应该怎么排查？",
+  "route": "troubleshooting",
+  "overreach_sensitive": true,
+  "bait_points": [
+    {"type": "param_name", "token": "initialDelaySeconds",
+     "why": "片段未给出该参数，模型易凭自身知识补上并挂在探针片段引用下"},
+    {"type": "wrong_topic_doc", "token": "linux-network-troubleshooting",
+     "why": "检索集稳定混入该无关文档，易被误挂来支撑探针结论"}
+  ],
+  "expected_verdicts": [
+    {"claim_contains": "startupProbe", "expect": "supported"},
+    {"claim_contains": "initialDelaySeconds", "expect": "unsupported"}
+  ],
+  "must_not_strip": ["startupProbe 保护启动慢应用"]
+}
+```
+
+| 字段 | 作用 |
+|---|---|
+| `bait_points` | **越界诱饵点** —— 明确标出"哪类参数名/哪类无关文档最容易漏"。没有它，人工复核就没有靶子 |
+| `expected_verdicts` | 给 critic 的对照答案（三态），用于算 critic 自身的准确率 |
+| `must_not_strip` | **误剥离防线** —— 列出"绝不能删的正确句"，直接服务 B1b 的"误剥离句 = 0" |
+
+**诱饵点类型清单（至少覆盖 3 类）**：
+
+1. `param_name` —— 片段未给出、模型易凭常识补的配置参数（如 `initialDelaySeconds`、`periodSeconds`）
+2. `wrong_topic_doc` —— 检索集混入的无关文档被误挂引用（v3 已实证：`linux-network-troubleshooting`）
+3. `synonym_note` —— **同义注记**（片段写"存活探针"、答案写 `livenessProbe`）：
+   **这类必须判 `supported` 不许剥离** —— 它是误剥离的高发点（`a3b_user_review_v3.md` q001 已实证）
+
+> 第 3 类是**反向诱饵**（考验"不误伤"），前两类是正向诱饵（考验"抓得住"）。B1b 要求两者同时为 0，
+> 所以专集必须同时含正反两类，否则只能测出一半。
 
 ---
 
@@ -173,7 +275,33 @@
 > **处置**：本迭代**不补第 2 次诊断**（越界，属范围外），
 > 但在 ADR / 报告里明确标注该漂移，避免后续误读。是否补，留 V2 决策。
 
-### 4.3 结论：**加 critic 后为 6，恰好顶满，零余量**
+### 4.3 结论：LLM 额度恰好够，但**超时墙钟会爆**（见 §4.4）
+
+`router(1) + rewrite(1) + troubleshoot(1) + checker(1) + critic(1) = 5`，
+加 final 的预留额度 = **6 = MAX_LLM_CALLS，恰好用完，零余量**。
+
+### 4.4 ⚠️ SPIKE 实测推翻：真正的瓶颈是**超时墙钟**，不是 LLM 额度
+
+原分析只算了 LLM 调用次数，**漏了节点超时总和约束**。实测（`spike-report-v11-critic.md` §3）：
+
+| 约束 | 现状 | 加 critic | 判定 |
+|---|---|---|---|
+| LLM 额度 `MAX_LLM_CALLS=6` | 5 | 6 | ✅ **恰好够**（非 final 可用 5 次，实需 5 次） |
+| **节点超时总和 ≤ 60000ms** | 53000ms | **61000ms** | ❌ **超 1000ms** |
+
+**这意味着**：即便 LLM 额度够，**墙钟也会在最后一个节点执行时打断它** ——
+`T_final=15000ms` 排在末位，墙钟溢出 1000ms 意味着 final 可能被截断。
+
+**必须重分配超时**。候选（待 critic 实测耗时定）：
+
+| 方案 | 改动 | 总计 | 评价 |
+|---|---|---|---|
+| BUD-1a | `critic` 超时 **7000ms** | 60000ms | 恰好卡线，零余量 |
+| **BUD-1b** | `critic` **7000ms** + `rewrite` 降到 **4000ms** | 59000ms | **推荐**（rewrite 是轻量改写，4s 够） |
+| BUD-1c | `critic` **6000ms** + `checker` 降到 **8000ms** | 57000ms | 余量最大，但 checker 降 2s 可能误判 |
+
+> **本项为硬约束**：`WALL_CLOCK_MS=60000`、`T_*` 的权威在 `agent-workflow.md` §5.1（单一权威）。
+> 阶段 5 升版时，超时表的改动必须同步回该文件并回扫所有引用（维护规则 1/3）。
 
 ```
 router(1) + rewrite(1) + troubleshoot(1) + checker(1) + final(1) + critic(1) = 6 = MAX_LLM_CALLS
@@ -183,10 +311,39 @@ router(1) + rewrite(1) + troubleshoot(1) + checker(1) + final(1) + critic(1) = 6
 且 `RESERVED_FOR_FINAL` 的语义要求 final 永不被抢 —— critic 若排在 final 之后调用，
 它在抢占顺序中的位置必须**低于 final**，被抢占时**静默跳过并标 degraded**（不阻断答案）。
 
-**处置方向（待阶段 2 SPIKE 用实测数据定，本文不预判）**：
-- 方案 A：`MAX_LLM_CALLS` 提额到 7（需重算 `T_*` 超时总和 ≤60s）
-- 方案 B：critic 不计入 `MAX_LLM_CALLS`（作为"后置质量层"独立配额）—— **需 ADR 论证是否破坏预算语义**
-- 方案 C：critic 只在 `checker` 未调用时启用（二者互斥，避免重复审查）
+### 4.5 预算方案候选（BUD 编号）
+
+**处置方向（待阶段 2 SPIKE 用实测数据定）**：
+
+> ⚠️ **命名说明**：本节的预算方案用 `BUD-1/2/3` 编号，
+> **不要与 ADR-0001 §2 的拓扑方案 `A/B/C`（独立审查者/自审/规则加强）混淆** —— 那是两套完全不同的决策。
+
+- **BUD-1（提额）**：`MAX_LLM_CALLS` 提额到 7（需重算 `T_*` 超时总和 ≤60s）
+- **BUD-2（独立配额）**：critic 不计入 `MAX_LLM_CALLS`（作为"后置质量层"独立配额）—— **需 ADR 论证是否破坏预算语义**
+- ~~**BUD-3（与 checker 互斥）**~~：critic 只在 `checker` 未调用时启用 → **已作废，方向错误**
+
+#### 4.5.1 BUD-3 作废的原因（P2 补丁）
+
+原 BUD-3 的理由是"checker 已做过同类判断，被它放行的草稿边际收益低"。**该理由与代码事实相反**：
+
+```python
+# evidence.py:101
+supported = bool(kept) and not invalid
+# evidence.py:104
+suspect = (not supported) or has_strong_claim(draft)   # ← 存疑才调 checker
+```
+
+**`checker` 被调用 = 这份草稿最可疑**（无有效引用 / 有无效引用 / 含强断言）。
+互斥方案的实际效果是：
+
+> **在最可疑的答案上取消逐句审查，在最干净的答案上保留逐句审查 —— 方向完全反了。**
+
+**改为待实测裁决的候选**（不是直接删除，也不是直接采纳）：
+SPIKE 增加一项统计 —— 35 题 + 专项集上，**`checker` 命中 vs 未命中两类 run 的越界流出率各是多少**。
+若数据显示"`checker` 命中处的越界密度更高"（大概率如此），则 BUD-3 **要么反转（只在 checker 命中时跑 critic）要么作废**。
+
+> **裁决必须用数据，不许用直觉**。若该统计因样本不足无法给出可信结论，则 BUD-3 **直接作废**，
+> 优先级转向 BUD-1（提额 7 + 超时总和重算）。
 
 > ⚠️ **本项若在 SPIKE 中证明不可行（无法在预算内完成），必须回到本文件修改赌注可达性，
 > 标注"来源=实测"，不得直接进实现。**
@@ -200,7 +357,9 @@ router(1) + rewrite(1) + troubleshoot(1) + checker(1) + final(1) + critic(1) = 6
 | R1 | critic 过度剥离导致 B2 下降 | 答案变空/变残 | 三态处置（`needs_downgrade_label` 而非删除）+ 剥离动作全进 trace 可复核 |
 | R2 | B2 基线过弱（1.000 只覆盖 5 句） | "不降"可能是统计假象 | 专项集 5–8 题补充；报告必须同时呈现"抽样口径"与"全量机器口径" |
 | R3 | 预算零余量 | critic 经常被抢占，实际上没跑 | SPIKE 定方案；报告必须记录 critic **实际执行率**（不是"配置为 on"就算跑过） |
-| R4 | 与 `evidence.checker` 职责重叠 | 重复烧预算 / 结论冲突 | ADR §2 明确分工；实现上二者互斥或明确优先级 |
+| **R6** | **评测被自己机制 gamed**（P1 补丁新增） | 撤标即隐身 → B1a 假绿 | **拆 B1a/B1b 两口径**（§2.1）；B1b 人工复核必须覆盖"全部被降级句" |
+| **R7** | **测量/处置口径不一致**（P3 补丁新增） | 切句不同 → 数字不可比 | critic **必须复用** `_SENTENCE_SPLIT`（ADR §3.1.1），加 `test_critic_claim_split_matches_detector` |
+| **R8** | **错位引用被误判 unsupported** | 正确内容被剥离 | **不修**（输入最小化的必然代价）。critic reason 输出"疑似错位引用"进 trace，禁止自动改配（ADR §6.2.1） |
 | R5 | 迁移编号冲突 | 迁移失败 | **用 `0004`**，不用任务书写的 `0003`（已被 `0003_retrieval_stats` 占用） |
 
 ---
@@ -209,10 +368,13 @@ router(1) + rewrite(1) + troubleshoot(1) + checker(1) + final(1) + critic(1) = 6
 
 | 判定 | 条件 |
 |---|---|
-| **PASS** | B1–B4 全部达标 + 门禁全绿（`go vet` / `go test` / `pytest`）+ 对照报告含 git commit 与逐题结果 |
+| **PASS** | **B1a + B1b + B2 + B3 + B4 全部达标** + 门禁全绿（`go vet` / `go test` / `pytest`）+ 对照报告含 git commit 与逐题结果 |
 | **PARTIAL** | 部分赌注达标 → 按 §2 规则回滚功能开关，报告写败因，**不得打 `v1.1` tag** |
-| **FAIL** | B1 未达标（核心目标失败）→ 回滚，PRD 记录，不进 README |
+| **FAIL** | **B1b 未达标**（人工复核仍有越界句或误剥离句）→ 回滚，PRD 记录，不进 README |
 
+> **B1a = 0 但 B1b 未做或未达标 → 判 PARTIAL，不得判 PASS。**
+> 机器口径单独不构成收口证明（§2.1），这是本轮迭代最重要的判定纪律。
+>
 > **「交付完成」≠「验收通过」** —— 与 S0–S9 同一口径。本迭代的最终结论由外部审查出具。
 
 ---
@@ -225,8 +387,8 @@ router(1) + rewrite(1) + troubleshoot(1) + checker(1) + final(1) + critic(1) = 6
 |---|---|
 | critic 功能需求条款（FR 新增） | §6.9 工作流编排 |
 | 三态处置的用户可见行为 | §7（新增"引用审查"小节） |
-| B1–B4 赌注 → 验收项 | §11.1（A16 `critic 引用审查`） |
-| 预算提额的常量变更 | §6.9 FR-36（若 SPIKE 选方案 A） |
+| B1a / B1b / B2 / B3 / B4 赌注 → 验收项 | §11.1（A16 `critic 引用审查`，含机器口径与人工口径两条） |
+| 预算提额的常量变更 | §6.9 FR-36（若 SPIKE 裁决选 BUD-1） |
 | 本迭代决策记录 | §14 修订记录（v1.10） |
 
 **阶段 5 必须做的版本引用回扫**（维护规则 1）：`grep -rn "MAX_LLM_CALLS\|reserved_for_final\|6 次" docs/`，
