@@ -1,0 +1,111 @@
+{
+  "q017": {
+    "question": "日志：connect() failed (110: Connection timed out) while connecting to upstream，问题在哪一层？",
+    "anchors": [
+      "110",
+      "connection timed out",
+      "log",
+      "logging",
+      "upstream",
+      "上游",
+      "日志"
+    ],
+    "chunks": [
+      {
+        "doc_title": "nginx-502-upstream",
+        "score": 0.7313,
+        "topic_score": 4.2,
+        "is_gold": false,
+        "heading_path": "Nginx 502 与 504 排查 > 2. upstream 配置要点 > keepalive 与连接复用",
+        "content": "n` 中同时设置 `proxy_http_version 1.1` 与 `proxy_set_header Connection \"\"`，否则长连接不生效。\n\n长连接不生效时，高并发下会出现大量 TIME_WAIT，端口耗尽后表现为偶发 502。\n\n### proxy_read_timeout\n\n`proxy_read_timeout` 默认 60 秒，指两次读操作之间的间隔，不是整个请求的总耗时。\n\n导出大文件或长轮询接口需要显式调大该值，否则会被 Nginx 主动断开，日志中出现 504。\n\n## 3. 排查顺序\n\n第一步看 Nginx 的 `error.log` 中 upstream 的具体错误，第二步确认上游进程是否存活，第三步用 `curl` 直连上游地址绕开 Nginx 验证，最后才检查超时与连接数配置。\n\n`upstream prematurely closed connection` 说明上游主动断开，通常是上游自身的超时或崩溃，而非 Nginx 配置问题。\n"
+      },
+      {
+        "doc_title": "nginx-502-upstream",
+        "score": 0.6227,
+        "topic_score": 1.3,
+        "is_gold": true,
+        "heading_path": "Nginx 502 与 504 排查",
+        "content": "# Nginx 502 与 504 排查\n\n## 1. 502 与 504 的区别\n\n502 Bad Gateway 表示上游返回了非法响应，或连接被上游重置，Nginx 无法解析响应。\n\n504 Gateway Timeout 表示 Nginx 等待上游响应超时，上游可能仍在处理，只是超过了 `proxy_read_timeout`。\n\n一句话区分：502 是\"上游答错了\"，504 是\"上游没答完\"。502 要查上游进程，504 要查耗时与超时配置。\n\n## 2. upstream 配置要点\n\n### keepalive 与连接复用\n\n`upstream` 块中配置 `keepalive` 后，必须在 `location` 中同时设置 `proxy_http_version 1.1` 与 `proxy_set_header Connection \"\"`，否则长连接不生效。"
+      },
+      {
+        "doc_title": "linux-network-troubleshooting",
+        "score": 0.5722,
+        "topic_score": 4.0,
+        "is_gold": true,
+        "heading_path": "Linux 网络故障排查",
+        "content": "# Linux 网络故障排查\n\n## 1. 连通性分层排查\n\n### 链路与网卡\n\n先确认网卡是否 up，用 `ip link` 查看状态，出现 `state DOWN` 说明链路层未就绪。\n\n### IP 与路由\n\n用 `ip addr` 确认地址是否配置正确，用 `ip route` 确认默认网关是否存在。\n\n缺少默认路由时，内网可达但访问公网会失败，表现为长时间等待后超时。\n\n### 端口监听\n\n服务起不来时先确认是否真的在监听，用 `ss -lntp` 查看监听地址与进程。\n\n监听在 `127.0.0.1` 时只有本机可访问，容器或外部访问必须监听 `0.0.0.0`。\n\n## 2. DNS 解析\n\n`ping` 域名失败但 `ping` IP 成功，通常是 DNS 问题。\n\n用 `nslookup` 或 `dig` 单独验证解析结果，再用 `cat /etc/resolv.conf` 确认 nameserver 配置。\n\n容器内 DNS 问题优先怀疑宿主机与集群 DNS 服务的连通性。\n\n## 3. 常见错误码含义\n\n`Connection refused` 表示目标端口没有进程监听，或防火墙主动拒绝，问题在服务端。\n\n`Connection timed out` 表示报文被丢弃，常见于防火墙丢包、安全组未放行、路由不可达。\n\n`No route to host` 表示链路层不可达，通常是同网段内主机不存在或 ARP 失败。\n\n理解这三个错误的区别，可以快速把问题范围从\"服务挂了\"收敛到\"网络不通\"或\"配置错误\"。\n"
+      },
+      {
+        "doc_title": "observability-logging",
+        "score": 0.5501,
+        "topic_score": 4.0,
+        "is_gold": false,
+        "heading_path": "线上服务日志规范",
+        "content": "# 线上服务日志规范\n\n## 1. 日志级别约定\n\nERROR 只用于需要人工介入的失败，例如请求无法完成、数据不一致、依赖不可用。\n\nWARN 用于可自愈的异常，例如重试成功、降级返回、连接池短暂耗尽。\n\nINFO 记录关键业务动作，每个请求一条汇总即可，不要在每个函数入口都打日志。\n\nDEBUG 默认关闭，只在定位问题时临时开启。\n\n## 2. 结构化日志字段\n\n推荐字段：时间戳、级别、服务名、实例标识、`request_id`、错误码、耗时、结果状态。\n\n耗时字段统一用毫秒整数，避免混用秒与微秒。\n\n错误码必须是有限枚举，禁止把异常堆栈直接当错误码使用。\n\n## 3. 错误码与 request_id 规范\n\n`request_id` 由网关生成并透传到下游，全链路保持一致，便于串联同一请求的所有日志。\n\n日志中禁止输出密钥、令牌、完整身份证号等敏感信息；确需定位时只记录哈希前缀。\n\n错误日志必须包含错误码与 `request_id` 两个字段，否则排查时无法与监控告警对齐。\n"
+      },
+      {
+        "doc_title": "mysql-slow-query",
+        "score": 0.5186,
+        "topic_score": 0.0,
+        "is_gold": false,
+        "heading_path": "MySQL 慢查询与锁等待排查 > 2. 索引失效的常见原因",
+        "content": "字查询，索引会失效。\n\n第二类是在索引列上使用函数，例如 `where date(created_at) = '2026-01-01'`，应改写为范围查询。\n\n第三类是前导通配的模糊匹配，`like '%abc'` 无法使用索引，`like 'abc%'` 可以。\n\n第四类是联合索引未遵循最左前缀，查询条件缺少最左列时索引无法使用。\n\n## 3. 连接数与锁等待\n\n### 连接数打满\n\n报错 `Too many connections` 表示连接数达到 `max_connections` 上限。\n\n先查 `show processlist` 看是否有大量 Sleep 连接，再确认应用连接池是否未正确归还连接。\n\n### 行锁等待\n\n报错 `Lock wait timeout exceeded` 表示等锁超时，默认阈值 50 秒。\n\n用 `information_schema.innodb_trx` 找到阻塞源事务，确认它是否开启了长事务且未提交。\n\n长事务会同时造成锁等待与 undo 膨胀，属于必须优先处理的问题。\n"
+      }
+    ],
+    "gold_doc_ids": [
+      "seed:nginx-502-upstream",
+      "seed:linux-network-troubleshooting"
+    ]
+  },
+  "q029": {
+    "question": "long_query_time 的单位是毫秒吗？",
+    "anchors": [
+      "long_query_time"
+    ],
+    "chunks": [
+      {
+        "doc_title": "nginx-502-upstream",
+        "score": 0.5963,
+        "topic_score": 0.0,
+        "is_gold": false,
+        "heading_path": "Nginx 502 与 504 排查 > 2. upstream 配置要点 > keepalive 与连接复用",
+        "content": "n` 中同时设置 `proxy_http_version 1.1` 与 `proxy_set_header Connection \"\"`，否则长连接不生效。\n\n长连接不生效时，高并发下会出现大量 TIME_WAIT，端口耗尽后表现为偶发 502。\n\n### proxy_read_timeout\n\n`proxy_read_timeout` 默认 60 秒，指两次读操作之间的间隔，不是整个请求的总耗时。\n\n导出大文件或长轮询接口需要显式调大该值，否则会被 Nginx 主动断开，日志中出现 504。\n\n## 3. 排查顺序\n\n第一步看 Nginx 的 `error.log` 中 upstream 的具体错误，第二步确认上游进程是否存活，第三步用 `curl` 直连上游地址绕开 Nginx 验证，最后才检查超时与连接数配置。\n\n`upstream prematurely closed connection` 说明上游主动断开，通常是上游自身的超时或崩溃，而非 Nginx 配置问题。\n"
+      },
+      {
+        "doc_title": "mysql-slow-query",
+        "score": 0.5527,
+        "topic_score": 0.0,
+        "is_gold": false,
+        "heading_path": "MySQL 慢查询与锁等待排查 > 2. 索引失效的常见原因",
+        "content": "字查询，索引会失效。\n\n第二类是在索引列上使用函数，例如 `where date(created_at) = '2026-01-01'`，应改写为范围查询。\n\n第三类是前导通配的模糊匹配，`like '%abc'` 无法使用索引，`like 'abc%'` 可以。\n\n第四类是联合索引未遵循最左前缀，查询条件缺少最左列时索引无法使用。\n\n## 3. 连接数与锁等待\n\n### 连接数打满\n\n报错 `Too many connections` 表示连接数达到 `max_connections` 上限。\n\n先查 `show processlist` 看是否有大量 Sleep 连接，再确认应用连接池是否未正确归还连接。\n\n### 行锁等待\n\n报错 `Lock wait timeout exceeded` 表示等锁超时，默认阈值 50 秒。\n\n用 `information_schema.innodb_trx` 找到阻塞源事务，确认它是否开启了长事务且未提交。\n\n长事务会同时造成锁等待与 undo 膨胀，属于必须优先处理的问题。\n"
+      },
+      {
+        "doc_title": "mysql-slow-query",
+        "score": 0.5472,
+        "topic_score": 1.0,
+        "is_gold": true,
+        "heading_path": "MySQL 慢查询与锁等待排查",
+        "content": "# MySQL 慢查询与锁等待排查\n\n## 1. 慢查询定位\n\n### 开启慢查询日志\n\n慢查询日志的参数是 `slow_query_log`，阈值参数是 `long_query_time`，单位是秒，支持小数。\n\n线上建议把阈值设为业务可接受的 P99 上浮一点，例如 0.5 秒，避免日志量过大。\n\n### explain 关注点\n\n`explain` 重点看三列：`type`、`rows`、`Extra`。\n\n`type` 出现 `ALL` 表示全表扫描，出现 `index` 表示扫描整棵索引树，都属于需要优化的信号。\n\n`Extra` 出现 `Using filesort` 说明排序无法用索引完成，出现 `Using temporary` 说明用了临时表。\n\n## 2. 索引失效的常见原因\n\n第一类是隐式类型转换，例如字符串列用数字查询，索引会失效。\n\n第二类是在索引列上使用函数，例如 `where date(created_at) = '2026-01-01'`，应改写为范围查询。"
+      },
+      {
+        "doc_title": "nginx-502-upstream",
+        "score": 0.4654,
+        "topic_score": 0.0,
+        "is_gold": false,
+        "heading_path": "Nginx 502 与 504 排查",
+        "content": "# Nginx 502 与 504 排查\n\n## 1. 502 与 504 的区别\n\n502 Bad Gateway 表示上游返回了非法响应，或连接被上游重置，Nginx 无法解析响应。\n\n504 Gateway Timeout 表示 Nginx 等待上游响应超时，上游可能仍在处理，只是超过了 `proxy_read_timeout`。\n\n一句话区分：502 是\"上游答错了\"，504 是\"上游没答完\"。502 要查上游进程，504 要查耗时与超时配置。\n\n## 2. upstream 配置要点\n\n### keepalive 与连接复用\n\n`upstream` 块中配置 `keepalive` 后，必须在 `location` 中同时设置 `proxy_http_version 1.1` 与 `proxy_set_header Connection \"\"`，否则长连接不生效。"
+      },
+      {
+        "doc_title": "observability-logging",
+        "score": 0.4318,
+        "topic_score": 0.0,
+        "is_gold": false,
+        "heading_path": "线上服务日志规范",
+        "content": "# 线上服务日志规范\n\n## 1. 日志级别约定\n\nERROR 只用于需要人工介入的失败，例如请求无法完成、数据不一致、依赖不可用。\n\nWARN 用于可自愈的异常，例如重试成功、降级返回、连接池短暂耗尽。\n\nINFO 记录关键业务动作，每个请求一条汇总即可，不要在每个函数入口都打日志。\n\nDEBUG 默认关闭，只在定位问题时临时开启。\n\n## 2. 结构化日志字段\n\n推荐字段：时间戳、级别、服务名、实例标识、`request_id`、错误码、耗时、结果状态。\n\n耗时字段统一用毫秒整数，避免混用秒与微秒。\n\n错误码必须是有限枚举，禁止把异常堆栈直接当错误码使用。\n\n## 3. 错误码与 request_id 规范\n\n`request_id` 由网关生成并透传到下游，全链路保持一致，便于串联同一请求的所有日志。\n\n日志中禁止输出密钥、令牌、完整身份证号等敏感信息；确需定位时只记录哈希前缀。\n\n错误日志必须包含错误码与 `request_id` 两个字段，否则排查时无法与监控告警对齐。\n"
+      }
+    ],
+    "gold_doc_ids": [
+      "seed:mysql-slow-query"
+    ]
+  }
+}

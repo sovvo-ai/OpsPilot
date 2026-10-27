@@ -70,6 +70,13 @@ class State(TypedDict, total=False):
     # `probe_chunk`，refuse 却永远拿到 None，拒答于是退化成"未找到"）。
     # 与 D2（`retrieval_top_score` 未落库）、`Citation.Index` 未声明同属一类。
     probe_chunk: RetrievedChunk | None
+    # 检索主题一致性过滤的审计明细（V1.1 主药，ADR-0002）。
+    # 形如 {"anchors": [...], "removed": [{doc_title, score, topic_score, matched}],
+    #       "kept": [...], "reason": "ok|no_anchors|empty_chunks|fallback_kept_top"}
+    # ⚠️ **同上：必须声明**，否则被静默丢弃，误杀无法审计。
+    # 这是"State schema 过滤"坑的第 5 个字段（前四个：retrieval_top_score /
+    # Citation.Index / probe_chunk / SPIKE 脚本 seed）。
+    topic_filter: dict[str, Any] | None
 
     # --- troubleshoot ---
     tool_calls: list[ToolCallRecord]

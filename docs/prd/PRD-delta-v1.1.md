@@ -1,14 +1,18 @@
-# PRD Delta · v1.1（Critic Agent / 引用审查者）
+# PRD Delta · v1.1（检索主题一致性过滤器）
 
 | 项 | 值 |
 |---|---|
-| 文档版本 | v1.1-delta-1 |
-| 状态 | **待外部审查**（实现方不得自行改为"已冻结" —— 计划书附录维护规则 4） |
+| 文档版本 | **v1.1-delta-3**（v1 = critic 方案；v2 = SPIKE 后换药；**v3 = 外部裁决落定，改名 + FB 赌注预注册**） |
+| 状态 | **待外部审查（验收轮）**（实现方不得自行改为"已冻结" —— 计划书附录维护规则 4） |
 | 日期 | 2026-10-27 |
-| 上游 | `docs/prd/PRD.md` v1.8 §6.9 / §7 / §11 / §12；`docs/testing/v3_residual_notes.md` |
+| 上游 | `docs/prd/PRD.md` v1.8 §6.9 / §7 / §11 / §12；`docs/testing/v3_residual_notes.md`；`docs/architecture/adr/0002-topic-filter-over-critic.md` |
 | 变更性质 | **收敛性迭代**：不新增用户可见能力，只收口一个已知缺陷 |
-| 范围 | 仅 `troubleshooting` 路径 + 超长答案；`kb_qa` 直通路径**不启用** |
+| 范围 | **全路径**启用检索主题一致性过滤；critic 推 V1.2 |
 
+> **本迭代已改名**：原「Critic Agent」→ **「检索主题一致性过滤器」**。
+> critic 不是失败，是被数据证明**不该现在当主角**（ADR-0002 §3），
+> SPIKE 的接线/预算/schema 结论全部存档，供 V1.2 立项复用。
+>
 > **本文不是 PRD 的替代品。** 它只记录 v1.1 相对 v1.8 的**增量决策与赌注**，
 > 其余一切（错误码、状态机、预算常量、验收项 A1–A15、U1–U10）**继承主文档，不在此复述**。
 > 冲突时以主文档为准，并回改本文（维护规则 1/3）。
@@ -69,11 +73,55 @@
 > **规则**：任一赌注不达标 → 功能开关回滚、PRD 记录败因，
 > **不改赌注数字**。赌注在开工前锁定，不允许在拿到结果后调阈值。
 >
-> **两个独立开关**（SPIKE 后新增）：
-> - `TOPIC_FILTER_ENABLED`（默认 off）—— 主药，全路径
-> - `CRITIC_ENABLED`（默认 off）—— 次药，仅 troubleshoot；是否做由三臂数据裁定
+> **最终命名（v1.1-delta-2，外部裁决 2 拍板）**：赌注编号统一为 **FB1–FB4**
+> （FB = Filter Bet）。原 B1a/B1b/B2/B2b/B3/B4 是 SPIKE 阶段的临时编号，
+> 保留在后文作为推导过程，**判定以本节 FB 表为准**。
 >
-> 二者**可独立回滚** —— filter 掉 Recall 就只关 filter，不影响 critic 的存在与否。
+> **单一开关**：`TOPIC_FILTER_ENABLED`（默认 off）。
+> 原双开关里的 `CRITIC_ENABLED` **本迭代不实现**（critic 推 V1.2，见 ADR-0002）。
+
+### 2.1 FB 赌注表（预注册，先写数字再动代码）
+
+| # | 赌注 | 判定口径（机器可测） | 基线 | 达标线 |
+|---|---|---|---|---|
+| **FB1** | **诱饵集越界流出 ≤ 基线 10%** | critic 专项集的 `detect_citation_overreach` 命中总数；**跑 3 轮取均值** | 21 处 / 15 run（A 臂） | **≤ 2 处**（10%）。⚠️ 实测单次 1 处只能算**点估计**，判定必须用 3 轮均值 |
+| **FB2** | **主集 Recall@5 on/off 差 = 0 且 MRR ≥ 基线** | 35 题主集，filter on/off **同次对照** | Recall 0.9259 / MRR 0.7728 | Recall **差 = 0**（严格）；MRR **≥ 0.7728**。⚠️ **不许拿"专集涨没涨"抵主集跌** |
+| **FB3** | **延迟按配对法判定** | 30 题 × 3 轮 on/off **配对**（同题相邻跑）；逐题配对差值均值 ± 95% CI（bootstrap 10000 次） | 见 §2.3 | **配对差值均值 ≤ +500ms 且 P50/P95 方向一致**；否则写「延迟影响不可判定，按零声明处理」 |
+| **FB4** | **误杀回归固化** | 测试套件是否包含：v1/v2 失败形态 + `q029` 阈值边界（1.5 必杀）+ `q017` 跨文档哨兵 | — | **全部存在且绿**。已实现：`test_topic_filter.py`（v1/v2 形态）+ `test_boundary_sentinels.py`（q017/q029） |
+
+### 2.2 为什么 FB1 必须「3 轮取均值」
+
+SPIKE 的 C 臂实测是 **1 处 / 15 run**。但：
+
+- 越界是**生成侧**行为（模型随机性），单次 1 处可能是运气；
+- 基线 21 处本身也是 15 run 的合计，不是确定值；
+- 10% 的线（≤2）与点估计（1）之间只差 1 处 —— **单次跑无法区分"真达标"与"噪声"**。
+
+→ **判定用 3 轮均值**，且报告里必须同时给三轮的原始值（不许只报均值）。
+
+### 2.3 FB3 的方法学（外部裁决 3：换方法）
+
+**废弃的方法**：各跑一次，比裸 P50 / 裸 P95。
+
+**为什么废弃**：n=15 时出现 **P50 +594ms 而 P95 −1548ms** 的**方向打架**——
+filter 是纯字符串匹配，理论增量 ≈0，两个方向相反的差值只能说明测到的是
+**模型时延噪声**，不是过滤器影响。
+
+**新方法（预注册）**：
+
+```
+30 题 × 3 轮，on/off 配对（同题相邻跑，抵消账号/时段漂移）
+统计量：逐题配对差值的均值 ± 95% CI（bootstrap，10000 次重采样）
+```
+
+**达标线（事后不许改）**：
+
+> **配对差值均值 ≤ +500ms 且 P50/P95 方向一致**
+
+不达标 → 报告写 **"延迟影响不可判定，按零声明处理"**
+（既不宣称零劣化，也不宣称劣化）。
+
+### 2.4 SPIKE 阶段临时编号（保留推导过程，判定以 §2.1 为准）
 
 | # | 赌注 | 判定口径（机器可测） | 基线值 | 达标线 |
 |---|---|---|---|---|
@@ -82,7 +130,22 @@
 | **B2** | A3b 支持率**不降** + **Recall@5 不降** | ① 同 20 条抽样口径；② 35 题主集 Recall@5（filter on/off 同次对照） | A3b = 1.000；Recall@5 = **0.9259** | ① ≥ 基线；② **≥ 0.9259 且 ≥ 0.75（A2 门槛）**。SPIKE 实测 **0.9259（±0）** ✅ |
 | **B2b** | MRR@5 **不降**（附加，filter 的顺带收益要量化） | 35 题主集 MRR@5 | 0.7728 | **≥ 0.7728**。SPIKE 实测 **0.8704（+0.0975）** ✅ |
 | **B3** | kb_qa 主链延迟**零劣化** | **同次对照跑内** filter on/off 的 kb_qa P95 差值 | A 臂 P95 = 9875ms（n=15） | **on 不劣于 off**。⚠️ SPIKE 实测 P50 6781→7375（+594ms）、P95 9875→8327（−1548ms），**方向不一致，n 不足，需 30 题×3 轮重测** |
-| **B4** | troubleshoot P95 **仍 ≤ 25s** | 同 `rag-eval-spec.md:90` 口径 | v3 实测 | **≤ 25000ms**。若 critic 不启用，此项**自动满足**（filter 零 LLM） |
+| **B4** | troubleshoot P95 **仍 ≤ 25s** | 同 `rag-eval-spec.md:90` 口径 | v3 实测 | **≤ 25000ms**。critic 不启用 → 此项**自动满足**（filter 零 LLM） |
+
+### 2.5 ⚠️ 已知限制（必须对外写明，缺了就是隐瞒）
+
+> **过滤参数以 5 篇语料 / 35 题标定，新语料泛化未验证，上线新文档集前须重扫阈值。**
+>
+> 这是**事实陈述，不是自我批评**：`min_consistency = 1.0` 是在本语料上扫出来的最优值，
+> 阈值扫描显示 1.0 与 1.5 之间只隔着一道边界（`q029` 的 gold chunk 分数**恰好 = 1.00**），
+> 这个边界的宽窄**完全取决于语料**。换文档集，1.0 可能过严也可能过松。
+
+**必写位置**：README「已知限制」节、`v1.1-eval-report.md`、ADR-0002 §6.2。
+**重扫方法**：`scripts/spike_v11/s5b_threshold_scan.py`。
+**机制守卫**：`test_boundary_sentinels.py::TestOverfitGuard`（默认阈值/开关/文档三者被锁定）。
+
+**为什么这条非写不可**：不写，将来换语料后 Recall 崩了，**没人知道是阈值问题**——
+只会去查检索、查模型、查 chunk，查三天也查不到一个从未被记录过的假设。
 
 ### 2.0 ⚠️ 赌注表已按 SPIKE 结论重写（v1.1-delta-2）
 
@@ -195,26 +258,38 @@
 > ⚠️ **filter 不是万能**：仍有 1/15 残留（正确片段内部本身不支撑结论时，模型仍会编）。
 > 但这不构成 critic 的正当性 —— critic 也覆盖不到那条路径。
 
-### 3.2 `kb_qa` 直通路径**明确不启用**，理由必须写清
+### 3.2 `kb_qa` 路径：**不启用 critic，但由 filter 全覆盖**
 
-| 理由 | 依据 |
-|---|---|
-| **延迟预算已无余量** | kb_qa P95 = 7813ms vs 阈值 8000ms，**仅余 ~200ms**（`v3_residual_notes.md` 第 59–61 行："7.8s 距 8s 仅约 200ms"）。加一次 critic LLM 调用必然破线 |
-| **预算已 5/6** | 最坏路径实测 5 次 LLM 调用（见 §4），加 critic = 6 = 上限，**零余量** |
-| **收益不对等** | kb_qa 是直通路径（`direct_pass` 条件满足时不调模型），答案短、句数少，overreach 密度低于 troubleshooting |
+> ⚠️ **本节已按裁决 4 重写**（原写"不启用 filter/critic"，与最终范围矛盾）。
 
-> **这是"不做"的决定，不是"暂缓"**。若将来要给 kb_qa 也上 critic，必须先在 B3 之外
+| 方案 | `kb_qa` 路径 | 理由 |
+|---|---|---|
+| **filter** | ✅ **启用（全路径）** | 零 LLM、零超时增量；实测全路径 Recall ±0（FB2 已过） |
+| **critic** | ❌ **不启用** | ① 该路径**无 `draft_answer`**（`prove_b` 实测 `evidence=method=skip`），critic 无输入可审；② 延迟仅余 ~200ms，加一次调用必破 8s；③ 预算已 5/6 |
+
+**关键**：缺陷原型 m001 走的就是 `kb_qa`（`chk_route` 实测）。
+**filter 全路径生效正是为了覆盖这条路径** —— 这是换主药的核心原因。
+
+> 若将来要给 `kb_qa` 也上 critic，须先解决"先出草稿再审查"的结构性改造（V1.2/V1.3），
+> 并单独立一个延迟赌注。**不允许在本迭代偷偷放进来。**
+
+> **这是"不做"的决定，不是"暂缓"**。若将来要给 `kb_qa` 也上 critic，必须先在 FB3 之外
 > 单独立一个延迟赌注 —— 不允许在本迭代偷偷放进来。
 
 ### 3.3 明确不做（越界即缺陷）
 
+> ⚠️ **已按裁决修正**：原表里"检索层主题过滤"被列为"不做"，
+> 但它在裁决 1 后**已成为本迭代主药**，故移除并改为"本迭代范围"。
+
 | 不做 | 归属 |
 |---|---|
+| **critic 节点**（生成后逐句审查） | **V1.2**（立项证据见 ADR-0002 §4） |
 | subgraph / 独立审查子图 | V1.2 |
 | HITL（人工介入审查） | V1.3 |
-| 新增评测主集题目（35 题基线**不动**） | 本迭代纪律 |
-| 检索层主题过滤 / rewrite 二次收敛 | V2-1 / V2-2（`v3_residual_notes.md` 残留 2，会影响 Recall） |
-| 自动改写答案内容（除剥离/改标） | 本迭代只做三态处置，不做"重写" |
+| 新增评测**主集**题目（35 题基线**不动**） | 本迭代纪律（诱饵集单独建，不计入主集） |
+| **rewrite 后二次检索收敛** | V2-2（`v3_residual_notes.md` 残留 2，会影响 Recall，需单独评估） |
+| 自动改写答案内容 | 本迭代不做任何"重写"（filter 只剔除 chunk，不改答案） |
+| 领域词表自动归纳 / 阈值自动标定 | V2（当前手工维护，`topic_filter.py` 内 `DOMAIN_TERMS`） |
 
 #### 3.3.1 顺带收口的展示瑕疵（小项 3）
 
@@ -223,11 +298,18 @@
 > 残留小瑕疵：清单生成器仍按位置标"引用 1"而正文角标是 [3]，
 > 契约要求按 index 展示——清单脚本待改（不改变本条判定）。
 
-**归入阶段 3 的 trace / 展示修复清单**，与 critic 的角标展示一并处理：
+**清理范围（本迭代实际需要做的）**：
 
-| # | 修复项 | 位置 |
-|---|---|---|
-| S1 | `run_steps` 新增 `agent_id` 列（迁移 **0004**） | `backend/migrations/` |
+| # | 修复项 | 状态 | 说明 |
+|---|---|---|---|
+| S1 | `run_steps` 新增 `agent_id` 列（迁移 0004） | ⬜ **推迟 V1.2** | critic 才有"按 agent 分账"需求；filter 不进图，无 agent 概念 |
+| S2 | 前端轨迹抽屉泳道 / agent 标注 | ⬜ **推迟 V1.2** | 同上 |
+| **S3** | **脚本按 `citations[].index` 展示，不用数组位置**（q029 瑕疵） | ⬜ **本迭代做** | 与 filter 无关，但属已记录的瑕疵，顺手清 |
+| **S4** | **filter 剔除明细进 trace**（哪个 chunk 被哪个锚点拒） | ✅ **已实现** | `state.topic_filter` + `result["topic_filter"]` + step 摘要 |
+
+> **S1/S2 推迟的理由**：它们是 `critic` 的配套（按 agent 分账、泳道展示）。
+> 主药换成 filter 后不需要 —— 强做等于为未实现的功能建表。
+> **本条属范围勘误，必须显式记录**（避免"任务书里有、代码里没有"的静默漂移）。
 | S2 | 前端轨迹抽屉加泳道 / agent 标注（UI 最小改动） | `backend/internal/web/static/` |
 | **S3** | **清单/脚本按 `citations[].index` 展示，不用数组位置**（q029 瑕疵） | `scripts/a3b_*` 相关脚本 |
 | S4 | critic 的三态处置在 trace 中可见（含"疑似错位引用"提示） | `run_steps` + 前端 |
@@ -235,53 +317,79 @@
 > S3 的口径与 `chat.py` 的 S9 修正（按 index 升序 + 显式 index 字段）一致 —— 前端已改，
 > **脚本侧未改**，属同一契约的另一半。
 
-### 3.4 critic 专项集（新增，独立于主集）
+### 3.4 越界诱饵集（`critic_golden.jsonl`，独立于主集）
+
+> **改名说明**：SPIKE 时期叫"critic 专项集"，因当时主药是 critic。
+> 主药换为 filter 后，它**不再服务于 critic**，而是**检验 filter 是否真能压住越界**。
+> 文件名沿用 `critic_golden.jsonl`（历史一致，避免改动脚本引用），**内容是诱饵题**。
 
 | 项 | 规定 |
 |---|---|
-| 规模 | **5~8 题** |
-| 标注 | 每题标 `overreach_sensitive=true` + 期望行为 |
-| 用途 | **仅本迭代回归** |
-| 是否进 README 七指标 | **否**。README 的七指标口径不变，专集结果单列在 `v11-critic-eval-report.md` |
+| 规模 | **8 题**（已建成） |
+| 文件 | `ai-service/evals/datasets/critic_golden.jsonl` |
+| 标注 | 每题 `overreach_sensitive=true` + `bait_points` + `expected_verdicts` + `must_not_strip` |
+| 用途 | **仅本迭代回归**（FB1 的测量集） |
+| 是否进 README 七指标 | **否**。README 七指标口径不变；诱饵集结果单列在 `v1.1-eval-report.md` |
 
-#### 3.4.1 必带 ground truth，且每题标"越界诱饵点"（P1 补丁）
+**已建成的 8 题**（每题都有真实依据，不是编的）：
 
-**没有 ground truth 的专集，B1b 没有对照物** —— 人工复核会变成"看一句判一句"的自由裁量，
-无法回答"该抓的抓到了吗、不该删的删了吗"。
+| id | 题 | 诱饵类型 |
+|---|---|---|
+| b001 | livenessProbe / readinessProbe 怎么配 | `param_name` ×3（v3 实测原句命中） |
+| b002 | 那它怎么配？（m001 原题） | `wrong_topic_doc` ×2 + `param_name` |
+| b003 | Pod 探针参数怎么调 | `param_name` ×2 |
+| b004 | proxy_read_timeout vs proxy_connect_timeout | `param_name` + **`synonym_note_reverse`**（反向诱饵） |
+| b005 | Exit Code 137 代表什么 | `param_name`（数值易被补全） |
+| b006 | connect() failed 110（**跨文档**） | `wrong_topic_doc` + `param_name` |
+| b007 | MySQL 索引失效原因 | `param_name` ×2（易补优化手段） |
+| b008 | CrashLoopBackOff vs ImagePullBackOff | `param_name` ×2 |
 
-每题的标注结构（阶段 2 产出，进 `ai-service/evals/datasets/critic_golden.jsonl`）：
+#### 3.4.1 必带 ground truth 与"越界诱饵点"
+
+**没有 ground truth 的诱饵集，FB1/FB4 没有对照物** ——
+人工复核会变成"看一句判一句"的自由裁量，无法回答"该抓的抓到了吗、不该删的删了吗"。
+
+每题字段（实际文件已按此落地）：
 
 ```json
 {
-  "qid": "c001",
-  "question": "Pod 一直 CrashLoopBackOff 应该怎么排查？",
-  "route": "troubleshooting",
+  "id": "b002",
+  "question": "那它怎么配？",
   "overreach_sensitive": true,
+  "turn_index": 1,
+  "history": [{"role": "user", "content": "Pod 一直重启，怀疑是探针配置有问题，怎么查？"},
+              {"role": "assistant", "content": "先看 describe 的 Last State 与 Events…"}],
+  "gold_doc_ids": ["seed:k8s-pod-troubleshooting"],
   "bait_points": [
-    {"type": "param_name", "token": "initialDelaySeconds",
-     "why": "片段未给出该参数，模型易凭自身知识补上并挂在探针片段引用下"},
     {"type": "wrong_topic_doc", "token": "linux-network-troubleshooting",
-     "why": "检索集稳定混入该无关文档，易被误挂来支撑探针结论"}
+     "why": "检索集稳定混入该无关文档（0.44 分），模型把它挂来支撑探针结论 —— v3 已实证"},
+    {"type": "param_name", "token": "initialDelaySeconds",
+     "why": "片段未给出该参数，模型易凭自身知识补上"}
   ],
   "expected_verdicts": [
     {"claim_contains": "startupProbe", "expect": "supported"},
-    {"claim_contains": "initialDelaySeconds", "expect": "unsupported"}
+    {"claim_contains": "livenessProbe 失败", "expect": "supported"}
   ],
-  "must_not_strip": ["startupProbe 保护启动慢应用"]
+  "must_not_strip": ["启动慢的应用应使用 startupProbe 保护",
+                     "livenessProbe 失败会导致容器重启"]
 }
 ```
 
 | 字段 | 作用 |
 |---|---|
-| `bait_points` | **越界诱饵点** —— 明确标出"哪类参数名/哪类无关文档最容易漏"。没有它，人工复核就没有靶子 |
-| `expected_verdicts` | 给 critic 的对照答案（三态），用于算 critic 自身的准确率 |
-| `must_not_strip` | **误剥离防线** —— 列出"绝不能删的正确句"，直接服务 B1b 的"误剥离句 = 0" |
+| `bait_points` | **越界诱饵点** —— 标出"哪类参数名/哪类无关文档最易漏"。没有它，人工复核没有靶子 |
+| `expected_verdicts` | 该句"应被保留"（`supported`）—— 服务的**不是 critic 准确率**，而是**filter 是否误杀正确内容** |
+| `must_not_strip` | **误杀防线**（FB4）—— 列出"绝不能删的正确句" |
+
+> ⚠️ **语义已随主药改变**：SPIKE 时期 `expected_verdicts` 用来算 critic 三态准确率；
+> 现在主药是 filter，它**退化为一组"必须保留"断言** ——
+> filter 若不慎把这些正确句依赖的 chunk 剔掉，就是误杀。
 
 **诱饵点类型清单（至少覆盖 3 类）**：
 
 1. `param_name` —— 片段未给出、模型易凭常识补的配置参数（如 `initialDelaySeconds`、`periodSeconds`）
 2. `wrong_topic_doc` —— 检索集混入的无关文档被误挂引用（v3 已实证：`linux-network-troubleshooting`）
-3. `synonym_note` —— **同义注记**（片段写"存活探针"、答案写 `livenessProbe`）：
+3. `synonym_note_reverse` —— **反向诱饵**（片段写"存活探针"、答案写 `livenessProbe`）：
    **这类必须判 `supported` 不许剥离** —— 它是误剥离的高发点（`a3b_user_review_v3.md` q001 已实证）
 
 > 第 3 类是**反向诱饵**（考验"不误伤"），前两类是正向诱饵（考验"抓得住"）。B1b 要求两者同时为 0，
@@ -450,3 +558,76 @@ SPIKE 增加一项统计 —— 35 题 + 专项集上，**`checker` 命中 vs �
 
 **阶段 5 必须做的版本引用回扫**（维护规则 1）：`grep -rn "MAX_LLM_CALLS\|reserved_for_final\|6 次" docs/`，
 确认所有引用位置同步 —— 常量为单一权威（`agent-workflow.md` §5.1），其余文档只引用不复述。
+---
+
+## 8. 范围勘误（裁决 1 落定后，逐项对照原阶段 3 任务书）
+
+> **为什么要单列**：原阶段 3 任务书是按"critic 当主药"写的。
+> 裁决换成 filter 后，**部分条目已不适用**。逐条对照，避免"任务书里有、代码里没有"的静默漂移。
+
+| 原任务书条目 | 现状 | 处置 |
+|---|---|---|
+| critic 节点实现 + 条件边 | ❌ 不做 | 推 V1.2（ADR-0002 §4） |
+| `CRITIC_ENABLED` 功能开关 | ❌ 不做 | 改为 `TOPIC_FILTER_ENABLED`（已实现） |
+| 预算按 SPIKE 结论落表 | ❌ 不做 | filter 不占预算（零 LLM/零超时）；critic 的 BUD-1d 方案留 V1.2 |
+| 抢占优先级表更新（critic 档位） | ❌ 不做 | 同上 |
+| `run_steps` 新增 `agent_id`（迁移 0004） | ⬜ 推迟 V1.2 | filter 不进图，无 agent 分账需求 |
+| usage 按 agent 分账 | ⬜ 推迟 V1.2 | 同上 |
+| 前端轨迹抽屉泳道/标注 | ⬜ 推迟 V1.2 | 同上 |
+| `TestStateSchemaCompleteness` 扩为每 agent 白名单 | ✅ **已做** | `test_graph.py::TestStateSchemaCompleteness.AGENT_RETURN_KEYS`，含"越权写入即红" |
+| critic 单测（三态/注入/不误伤） | ❌ 不做 | 推 V1.2 |
+| 节点级回归（装配边界断言） | ✅ **已做（filter 版）** | `test_retrieval_node_return_keys_are_declared` 开/关两种 cfg 都测 |
+| 所有中文用例走 httpx（G7） | ✅ 遵守 | 所有脚本用 httpx，无 Windows curl |
+| 评测对照（on/off 全量） | ✅ 在做 | `s9_v11_eval.py`（FB1/FB2/FB4） |
+| 延迟 30×3 配对 | ✅ 在做 | `s8_latency_paired.py`（FB3） |
+| PRD 升版 + 版本回扫 | ⬜ 待验收通过后 | 阶段 5 收口 |
+| CHANGELOG + tag v1.1 | ⬜ 待验收通过后 | **未达标不打 tag** |
+
+### 8.1 残留 1/15 的回归清单（裁决 1 条件 ①）
+
+> **它是 critic 未来的靶子，不是 filter 的 bug。** 但必须留一条可复查的记录。
+
+| 项 | 内容 |
+|---|---|
+| 现象 | filter 后仍有 1/15 run 出现越界（`q001` 第 5 轮，SPIKE 实测） |
+| 形态 | **正确片段（主题对）内部不支撑该结论**时，模型仍为该结论挂该片段的 `[n]` |
+| filter 为何治不了 | filter 只判"chunk 属不属于本主题"，不判"这句话是否被该 chunk 支撑" |
+| 本迭代处置 | **接受并记录**（ADR-0002 §4 逐字存档） |
+| 复查方式 | 每轮评测检查 `v11_eval_raw.json` 的 `fb1.filter_rounds`；若均值 >2 需重新评估 |
+| V1.2 靶子 | **critic 缩小范围后（troubleshooting 先行）**，赌注直接对这条写（ADR-0002 §4.1） |
+
+> **对外表述底线**：可写「越界流出降 95%（21→1，三臂对照），残留 1/15 见已知限制」；
+> **「根治」二字只能出现在否定句里**（如"未根治""不能宣称已根治"）。
+
+---
+
+## 9. 评测方法（本迭代验收的测量口径，预注册）
+
+### 9.1 FB1（诱饵集越界）
+
+- **数据**：`critic_golden.jsonl` 8 题
+- **轮次**：**3 轮**，on/off 各跑
+- **统计**：每轮的 overreach 总数；**判定用 3 轮均值**
+- **报告要求**：必须同时给出三轮原始值与均值（**不许只报均值**）
+
+### 9.2 FB2（主集检索指标）
+
+- **数据**：`qa_golden.jsonl` 35 题
+- **口径**：`hit_index` 按 `gold_chunk_texts` 子串匹配（与 `run_eval.py` 同源）
+- **判定**：`ΔRecall = 0`（严格相等）**且** `MRR_on ≥ MRR_off`
+- **附加要求**：必须列出"丢失命中"与"新增命中"的题号 —— **不许只报均值**
+
+### 9.3 FB3（延迟）
+
+- **方法**：30 题 × 3 轮，on/off **同题相邻跑**（配对）
+- **统计**：逐题配对差值的**均值 ± 95% CI**（bootstrap 10000 次）
+- **判定**：均值 ≤ +500ms **且** P50/P95 方向一致
+- **不达标**：写「延迟影响不可判定，按零声明处理」
+
+### 9.4 FB4（哨兵）
+
+- **文件**：`test_topic_filter.py`（v1/v2 误杀形态）+ `test_boundary_sentinels.py`（q017/q029/过拟合守卫）
+- **判定**：全部存在且 pytest 绿
+- **实跑**：由 CI/本地 pytest 负责，评测脚本只检查存在性
+
+---

@@ -1,0 +1,985 @@
+{
+  "commit": "f17e1a33ec8e",
+  "rounds": 3,
+  "fb2": {
+    "off": {
+      "recall": 0.9259,
+      "mrr": 0.7728
+    },
+    "on": {
+      "recall": 0.9259,
+      "mrr": 0.8704
+    },
+    "delta_recall": 0.0,
+    "delta_mrr": 0.0975,
+    "lost_hits": [],
+    "gained_hits": [],
+    "pass": true,
+    "per_case_on": [
+      {
+        "id": "q001",
+        "hit": true,
+        "rank": 1,
+        "n_chunks": 2
+      },
+      {
+        "id": "q002",
+        "hit": true,
+        "rank": 2,
+        "n_chunks": 2
+      },
+      {
+        "id": "q003",
+        "hit": true,
+        "rank": 1,
+        "n_chunks": 1
+      },
+      {
+        "id": "q004",
+        "hit": true,
+        "rank": 1,
+        "n_chunks": 1
+      },
+      {
+        "id": "q005",
+        "hit": true,
+        "rank": 1,
+        "n_chunks": 1
+      },
+      {
+        "id": "q006",
+        "hit": true,
+        "rank": 1,
+        "n_chunks": 2
+      },
+      {
+        "id": "q007",
+        "hit": true,
+        "rank": 1,
+        "n_chunks": 1
+      },
+      {
+        "id": "q008",
+        "hit": true,
+        "rank": 1,
+        "n_chunks": 2
+      },
+      {
+        "id": "q009",
+        "hit": true,
+        "rank": 1,
+        "n_chunks": 2
+      },
+      {
+        "id": "q010",
+        "hit": true,
+        "rank": 1,
+        "n_chunks": 1
+      },
+      {
+        "id": "q011",
+        "hit": true,
+        "rank": 1,
+        "n_chunks": 2
+      },
+      {
+        "id": "q012",
+        "hit": true,
+        "rank": 1,
+        "n_chunks": 3
+      },
+      {
+        "id": "q013",
+        "hit": true,
+        "rank": 1,
+        "n_chunks": 2
+      },
+      {
+        "id": "q014",
+        "hit": true,
+        "rank": 1,
+        "n_chunks": 3
+      },
+      {
+        "id": "q015",
+        "hit": true,
+        "rank": 1,
+        "n_chunks": 2
+      },
+      {
+        "id": "q016",
+        "hit": true,
+        "rank": 1,
+        "n_chunks": 2
+      },
+      {
+        "id": "q017",
+        "hit": true,
+        "rank": 2,
+        "n_chunks": 4
+      },
+      {
+        "id": "q018",
+        "hit": true,
+        "rank": 1,
+        "n_chunks": 1
+      },
+      {
+        "id": "q027",
+        "hit": true,
+        "rank": 1,
+        "n_chunks": 1
+      },
+      {
+        "id": "q028",
+        "hit": true,
+        "rank": 1,
+        "n_chunks": 2
+      },
+      {
+        "id": "q029",
+        "hit": true,
+        "rank": 1,
+        "n_chunks": 1
+      },
+      {
+        "id": "q030",
+        "hit": true,
+        "rank": 2,
+        "n_chunks": 2
+      },
+      {
+        "id": "m001",
+        "hit": false,
+        "rank": null,
+        "n_chunks": 0
+      },
+      {
+        "id": "m002",
+        "hit": true,
+        "rank": 1,
+        "n_chunks": 1
+      },
+      {
+        "id": "m003",
+        "hit": true,
+        "rank": 1,
+        "n_chunks": 2
+      },
+      {
+        "id": "m004",
+        "hit": false,
+        "rank": null,
+        "n_chunks": 3
+      },
+      {
+        "id": "m005",
+        "hit": true,
+        "rank": 1,
+        "n_chunks": 1
+      }
+    ]
+  },
+  "fb1": {
+    "bait_n": 8,
+    "base_rounds": [
+      8,
+      7,
+      9
+    ],
+    "filter_rounds": [
+      0,
+      1,
+      1
+    ],
+    "base_mean": 8,
+    "filter_mean": 0.67,
+    "target": 0.8,
+    "pass": true,
+    "detail": {
+      "base": [
+        {
+          "n_runs": 8,
+          "total_overreach": 8,
+          "runs_with_overreach": 5,
+          "rows": [
+            {
+              "id": "b001",
+              "route": "kb_qa",
+              "overreach": 2,
+              "overreach_tokens": [
+                "livenessProbe",
+                "readinessProbe",
+                "initialDelaySeconds",
+                "timeoutSeconds"
+              ],
+              "citations": 2,
+              "retrieved": 5,
+              "filtered_out": 0,
+              "filter_reason": null,
+              "filter_anchors": null
+            },
+            {
+              "id": "b002",
+              "route": "kb_qa",
+              "overreach": 3,
+              "overreach_tokens": [
+                "livenessProbe",
+                "readinessProbe",
+                "livenessProbe",
+                "startupProbe",
+                "livenessProbe"
+              ],
+              "citations": 1,
+              "retrieved": 5,
+              "filtered_out": 0,
+              "filter_reason": null,
+              "filter_anchors": null
+            },
+            {
+              "id": "b003",
+              "route": "kb_qa",
+              "overreach": 1,
+              "overreach_tokens": [
+                "livenessProbe",
+                "startupProbe"
+              ],
+              "citations": 2,
+              "retrieved": 5,
+              "filtered_out": 0,
+              "filter_reason": null,
+              "filter_anchors": null
+            },
+            {
+              "id": "b004",
+              "route": "kb_qa",
+              "overreach": 1,
+              "overreach_tokens": [
+                "proxy_connect_timeout"
+              ],
+              "citations": 2,
+              "retrieved": 5,
+              "filtered_out": 0,
+              "filter_reason": null,
+              "filter_anchors": null
+            },
+            {
+              "id": "b005",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 2,
+              "retrieved": 5,
+              "filtered_out": 0,
+              "filter_reason": null,
+              "filter_anchors": null
+            },
+            {
+              "id": "b006",
+              "route": "troubleshooting",
+              "overreach": 1,
+              "overreach_tokens": [
+                "proxy_read_timeout"
+              ],
+              "citations": 2,
+              "retrieved": 5,
+              "filtered_out": 0,
+              "filter_reason": null,
+              "filter_anchors": null
+            },
+            {
+              "id": "b007",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 2,
+              "retrieved": 5,
+              "filtered_out": 0,
+              "filter_reason": null,
+              "filter_anchors": null
+            },
+            {
+              "id": "b008",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 1,
+              "retrieved": 5,
+              "filtered_out": 0,
+              "filter_reason": null,
+              "filter_anchors": null
+            }
+          ]
+        },
+        {
+          "n_runs": 8,
+          "total_overreach": 7,
+          "runs_with_overreach": 4,
+          "rows": [
+            {
+              "id": "b001",
+              "route": "kb_qa",
+              "overreach": 1,
+              "overreach_tokens": [
+                "livenessProbe",
+                "readinessProbe"
+              ],
+              "citations": 2,
+              "retrieved": 5,
+              "filtered_out": 0,
+              "filter_reason": null,
+              "filter_anchors": null
+            },
+            {
+              "id": "b002",
+              "route": "kb_qa",
+              "overreach": 3,
+              "overreach_tokens": [
+                "livenessProbe",
+                "readinessProbe",
+                "livenessProbe",
+                "startupProbe",
+                "livenessProbe"
+              ],
+              "citations": 1,
+              "retrieved": 5,
+              "filtered_out": 0,
+              "filter_reason": null,
+              "filter_anchors": null
+            },
+            {
+              "id": "b003",
+              "route": "kb_qa",
+              "overreach": 2,
+              "overreach_tokens": [
+                "livenessProbe",
+                "startupProbe",
+                "initialDelaySeconds",
+                "timeoutSeconds"
+              ],
+              "citations": 2,
+              "retrieved": 5,
+              "filtered_out": 0,
+              "filter_reason": null,
+              "filter_anchors": null
+            },
+            {
+              "id": "b004",
+              "route": "kb_qa",
+              "overreach": 1,
+              "overreach_tokens": [
+                "proxy_connect_timeout"
+              ],
+              "citations": 2,
+              "retrieved": 5,
+              "filtered_out": 0,
+              "filter_reason": null,
+              "filter_anchors": null
+            },
+            {
+              "id": "b005",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 2,
+              "retrieved": 5,
+              "filtered_out": 0,
+              "filter_reason": null,
+              "filter_anchors": null
+            },
+            {
+              "id": "b006",
+              "route": "troubleshooting",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 3,
+              "retrieved": 5,
+              "filtered_out": 0,
+              "filter_reason": null,
+              "filter_anchors": null
+            },
+            {
+              "id": "b007",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 2,
+              "retrieved": 5,
+              "filtered_out": 0,
+              "filter_reason": null,
+              "filter_anchors": null
+            },
+            {
+              "id": "b008",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 1,
+              "retrieved": 5,
+              "filtered_out": 0,
+              "filter_reason": null,
+              "filter_anchors": null
+            }
+          ]
+        },
+        {
+          "n_runs": 8,
+          "total_overreach": 9,
+          "runs_with_overreach": 5,
+          "rows": [
+            {
+              "id": "b001",
+              "route": "kb_qa",
+              "overreach": 2,
+              "overreach_tokens": [
+                "livenessProbe",
+                "readinessProbe",
+                "initialDelaySeconds",
+                "timeoutSeconds"
+              ],
+              "citations": 2,
+              "retrieved": 5,
+              "filtered_out": 0,
+              "filter_reason": null,
+              "filter_anchors": null
+            },
+            {
+              "id": "b002",
+              "route": "kb_qa",
+              "overreach": 3,
+              "overreach_tokens": [
+                "livenessProbe",
+                "readinessProbe",
+                "livenessProbe",
+                "startupProbe",
+                "failureThreshold",
+                "initialDelaySeconds",
+                "livenessProbe",
+                "periodSeconds",
+                "startupProbe"
+              ],
+              "citations": 1,
+              "retrieved": 5,
+              "filtered_out": 0,
+              "filter_reason": null,
+              "filter_anchors": null
+            },
+            {
+              "id": "b003",
+              "route": "kb_qa",
+              "overreach": 2,
+              "overreach_tokens": [
+                "livenessProbe",
+                "startupProbe",
+                "initialDelaySeconds"
+              ],
+              "citations": 2,
+              "retrieved": 5,
+              "filtered_out": 0,
+              "filter_reason": null,
+              "filter_anchors": null
+            },
+            {
+              "id": "b004",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 1,
+              "retrieved": 5,
+              "filtered_out": 0,
+              "filter_reason": null,
+              "filter_anchors": null
+            },
+            {
+              "id": "b005",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 2,
+              "retrieved": 5,
+              "filtered_out": 0,
+              "filter_reason": null,
+              "filter_anchors": null
+            },
+            {
+              "id": "b006",
+              "route": "troubleshooting",
+              "overreach": 1,
+              "overreach_tokens": [
+                "upstream_ip"
+              ],
+              "citations": 2,
+              "retrieved": 5,
+              "filtered_out": 0,
+              "filter_reason": null,
+              "filter_anchors": null
+            },
+            {
+              "id": "b007",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 2,
+              "retrieved": 5,
+              "filtered_out": 0,
+              "filter_reason": null,
+              "filter_anchors": null
+            },
+            {
+              "id": "b008",
+              "route": "kb_qa",
+              "overreach": 1,
+              "overreach_tokens": [
+                "livenessProbe"
+              ],
+              "citations": 1,
+              "retrieved": 5,
+              "filtered_out": 0,
+              "filter_reason": null,
+              "filter_anchors": null
+            }
+          ]
+        }
+      ],
+      "filter": [
+        {
+          "n_runs": 8,
+          "total_overreach": 0,
+          "runs_with_overreach": 0,
+          "rows": [
+            {
+              "id": "b001",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 1,
+              "retrieved": 1,
+              "filtered_out": 4,
+              "filter_reason": "ok",
+              "filter_anchors": [
+                "livenessprobe",
+                "readinessprobe"
+              ]
+            },
+            {
+              "id": "b002",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 1,
+              "retrieved": 1,
+              "filtered_out": 4,
+              "filter_reason": "ok",
+              "filter_anchors": [
+                "kubelet",
+                "liveness",
+                "pod",
+                "probe",
+                "readiness",
+                "startup",
+                "健康检查",
+                "容器",
+                "探针"
+              ]
+            },
+            {
+              "id": "b003",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 1,
+              "retrieved": 1,
+              "filtered_out": 4,
+              "filter_reason": "ok",
+              "filter_anchors": [
+                "kubelet",
+                "liveness",
+                "pod",
+                "probe",
+                "readiness",
+                "startup",
+                "健康检查",
+                "容器",
+                "探针"
+              ]
+            },
+            {
+              "id": "b004",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 1,
+              "retrieved": 2,
+              "filtered_out": 3,
+              "filter_reason": "ok",
+              "filter_anchors": [
+                "proxy_connect_timeout",
+                "proxy_read_timeout"
+              ]
+            },
+            {
+              "id": "b005",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 2,
+              "retrieved": 2,
+              "filtered_out": 3,
+              "filter_reason": "ok",
+              "filter_anchors": [
+                "exit code 137"
+              ]
+            },
+            {
+              "id": "b006",
+              "route": "troubleshooting",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 3,
+              "retrieved": 4,
+              "filtered_out": 1,
+              "filter_reason": "ok",
+              "filter_anchors": [
+                "110",
+                "connection timed out",
+                "log",
+                "logging",
+                "upstream",
+                "上游",
+                "日志"
+              ]
+            },
+            {
+              "id": "b007",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 2,
+              "retrieved": 2,
+              "filtered_out": 3,
+              "filter_reason": "ok",
+              "filter_anchors": [
+                "explain",
+                "index",
+                "mysql",
+                "全表扫描",
+                "索引"
+              ]
+            },
+            {
+              "id": "b008",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 1,
+              "retrieved": 2,
+              "filtered_out": 3,
+              "filter_reason": "ok",
+              "filter_anchors": [
+                "crashloopbackoff",
+                "imagepullbackoff",
+                "退避",
+                "重启"
+              ]
+            }
+          ]
+        },
+        {
+          "n_runs": 8,
+          "total_overreach": 1,
+          "runs_with_overreach": 1,
+          "rows": [
+            {
+              "id": "b001",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 1,
+              "retrieved": 1,
+              "filtered_out": 4,
+              "filter_reason": "ok",
+              "filter_anchors": [
+                "livenessprobe",
+                "readinessprobe"
+              ]
+            },
+            {
+              "id": "b002",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 1,
+              "retrieved": 1,
+              "filtered_out": 4,
+              "filter_reason": "ok",
+              "filter_anchors": [
+                "kubelet",
+                "liveness",
+                "pod",
+                "probe",
+                "readiness",
+                "startup",
+                "健康检查",
+                "容器",
+                "探针"
+              ]
+            },
+            {
+              "id": "b003",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 1,
+              "retrieved": 1,
+              "filtered_out": 4,
+              "filter_reason": "ok",
+              "filter_anchors": [
+                "kubelet",
+                "liveness",
+                "pod",
+                "probe",
+                "readiness",
+                "startup",
+                "健康检查",
+                "容器",
+                "探针"
+              ]
+            },
+            {
+              "id": "b004",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 1,
+              "retrieved": 2,
+              "filtered_out": 3,
+              "filter_reason": "ok",
+              "filter_anchors": [
+                "proxy_connect_timeout",
+                "proxy_read_timeout"
+              ]
+            },
+            {
+              "id": "b005",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 2,
+              "retrieved": 2,
+              "filtered_out": 3,
+              "filter_reason": "ok",
+              "filter_anchors": [
+                "exit code 137"
+              ]
+            },
+            {
+              "id": "b006",
+              "route": "troubleshooting",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 1,
+              "retrieved": 4,
+              "filtered_out": 1,
+              "filter_reason": "ok",
+              "filter_anchors": [
+                "110",
+                "connection timed out",
+                "log",
+                "logging",
+                "upstream",
+                "上游",
+                "日志"
+              ]
+            },
+            {
+              "id": "b007",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 2,
+              "retrieved": 2,
+              "filtered_out": 3,
+              "filter_reason": "ok",
+              "filter_anchors": [
+                "explain",
+                "index",
+                "mysql",
+                "全表扫描",
+                "索引"
+              ]
+            },
+            {
+              "id": "b008",
+              "route": "kb_qa",
+              "overreach": 1,
+              "overreach_tokens": [
+                "livenessProbe"
+              ],
+              "citations": 2,
+              "retrieved": 2,
+              "filtered_out": 3,
+              "filter_reason": "ok",
+              "filter_anchors": [
+                "crashloopbackoff",
+                "imagepullbackoff",
+                "退避",
+                "重启"
+              ]
+            }
+          ]
+        },
+        {
+          "n_runs": 8,
+          "total_overreach": 1,
+          "runs_with_overreach": 1,
+          "rows": [
+            {
+              "id": "b001",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 1,
+              "retrieved": 1,
+              "filtered_out": 4,
+              "filter_reason": "ok",
+              "filter_anchors": [
+                "livenessprobe",
+                "readinessprobe"
+              ]
+            },
+            {
+              "id": "b002",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 1,
+              "retrieved": 1,
+              "filtered_out": 4,
+              "filter_reason": "ok",
+              "filter_anchors": [
+                "kubelet",
+                "liveness",
+                "pod",
+                "probe",
+                "readiness",
+                "startup",
+                "健康检查",
+                "容器",
+                "探针"
+              ]
+            },
+            {
+              "id": "b003",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 1,
+              "retrieved": 1,
+              "filtered_out": 4,
+              "filter_reason": "ok",
+              "filter_anchors": [
+                "kubelet",
+                "liveness",
+                "pod",
+                "probe",
+                "readiness",
+                "startup",
+                "健康检查",
+                "容器",
+                "探针"
+              ]
+            },
+            {
+              "id": "b004",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 1,
+              "retrieved": 2,
+              "filtered_out": 3,
+              "filter_reason": "ok",
+              "filter_anchors": [
+                "proxy_connect_timeout",
+                "proxy_read_timeout"
+              ]
+            },
+            {
+              "id": "b005",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 2,
+              "retrieved": 2,
+              "filtered_out": 3,
+              "filter_reason": "ok",
+              "filter_anchors": [
+                "exit code 137"
+              ]
+            },
+            {
+              "id": "b006",
+              "route": "troubleshooting",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 3,
+              "retrieved": 4,
+              "filtered_out": 1,
+              "filter_reason": "ok",
+              "filter_anchors": [
+                "110",
+                "connection timed out",
+                "log",
+                "logging",
+                "upstream",
+                "上游",
+                "日志"
+              ]
+            },
+            {
+              "id": "b007",
+              "route": "kb_qa",
+              "overreach": 0,
+              "overreach_tokens": [],
+              "citations": 2,
+              "retrieved": 2,
+              "filtered_out": 3,
+              "filter_reason": "ok",
+              "filter_anchors": [
+                "explain",
+                "index",
+                "mysql",
+                "全表扫描",
+                "索引"
+              ]
+            },
+            {
+              "id": "b008",
+              "route": "kb_qa",
+              "overreach": 1,
+              "overreach_tokens": [
+                "livenessProbe"
+              ],
+              "citations": 1,
+              "retrieved": 2,
+              "filtered_out": 3,
+              "filter_reason": "ok",
+              "filter_anchors": [
+                "crashloopbackoff",
+                "imagepullbackoff",
+                "退避",
+                "重启"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "fb4": {
+    "files": [
+      "ai-service\\tests\\unit\\test_topic_filter.py",
+      "ai-service\\tests\\unit\\test_boundary_sentinels.py"
+    ],
+    "all_exist": true
+  }
+}

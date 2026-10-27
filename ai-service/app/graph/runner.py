@@ -360,6 +360,8 @@ def run_turn(
         "retrieved_chunk_ids": [c.get("chunk_id") for c in (final_state.get("chunks") or [])],
         # S9：引用越界检测明细（观测性；Go 侧落 trace 供人工复核）
         "citation_overreach": final_state.get("citation_overreach") or [],
+        # V1.1 主题过滤审计（ADR-0002 §7：每次剔除写 trace，审计误杀不靠人肉）
+        "topic_filter": final_state.get("topic_filter"),
     }
 
     if emit:

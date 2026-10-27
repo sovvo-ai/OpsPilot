@@ -28,6 +28,17 @@ def get_config() -> dict:
         "retrieval_top_k": int(os.getenv("RETRIEVAL_TOP_K", "5")),
         "retrieval_min_score": float(os.getenv("RETRIEVAL_MIN_SCORE", "0.35")),
         "hnsw_ef_search": int(os.getenv("HNSW_EF_SEARCH", "100")),
+        # 检索主题一致性过滤（V1.1 主药，ADR-0002）
+        #
+        # 默认 **off** —— 理由：阈值 min_consistency=1.0 是在 5 篇语料/35 题上扫出来的，
+        # 参数过拟合于本语料（ADR-0002 §6.2）。换新文档集必须先重扫阈值
+        # （`scripts/spike_v11/s5b_threshold_scan.py`）再启用。
+        # 评测与演示显式置 1。
+        "topic_filter_enabled": os.getenv("TOPIC_FILTER_ENABLED", "false").lower()
+        in ("1", "true", "yes"),
+        "topic_filter_min_consistency": float(
+            os.getenv("TOPIC_FILTER_MIN_CONSISTENCY", "1.0")
+        ),
         # 生成参数
         "llm_timeout_seconds": float(os.getenv("LLM_TIMEOUT_SECONDS", "30")),
         "answer_max_tokens": int(os.getenv("ANSWER_MAX_TOKENS", "512")),  # 方案 A：原 1024

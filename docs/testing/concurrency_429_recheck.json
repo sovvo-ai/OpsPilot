@@ -1,0 +1,69 @@
+{
+  "tested_at": "2026-10-27T19:56:44+0800",
+  "model": "text-embedding-v4",
+  "levels": [
+    {
+      "concurrency": 10,
+      "ok": 10,
+      "n_429": 0,
+      "n_other": 0,
+      "retry_after_values": [],
+      "sample_429_body": "",
+      "sample_other": ""
+    },
+    {
+      "concurrency": 20,
+      "ok": 20,
+      "n_429": 0,
+      "n_other": 0,
+      "retry_after_values": [],
+      "sample_429_body": "",
+      "sample_other": ""
+    },
+    {
+      "concurrency": 30,
+      "ok": 30,
+      "n_429": 0,
+      "n_other": 0,
+      "retry_after_values": [],
+      "sample_429_body": "",
+      "sample_other": ""
+    },
+    {
+      "concurrency": 40,
+      "ok": 40,
+      "n_429": 0,
+      "n_other": 0,
+      "retry_after_values": [],
+      "sample_429_body": "",
+      "sample_other": ""
+    },
+    {
+      "concurrency": 50,
+      "ok": 47,
+      "n_429": 3,
+      "n_other": 0,
+      "retry_after_values": [
+        "None"
+      ],
+      "sample_429_body": "{\"error\":{\"message\":\"You have exceeded your current request limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#rate-limit\",\"type\":\"limit_requests\",\"param\":null,\"code\":\"limit_r",
+      "sample_other": ""
+    },
+    {
+      "concurrency": 60,
+      "ok": 59,
+      "n_429": 1,
+      "n_other": 0,
+      "retry_after_values": [
+        "None"
+      ],
+      "sample_429_body": "{\"error\":{\"message\":\"You have exceeded your current request limit. For details, see: https://help.aliyun.com/zh/model-studio/error-code#rate-limit\",\"type\":\"limit_requests\",\"param\":null,\"code\":\"limit_r",
+      "sample_other": ""
+    }
+  ],
+  "max_clean_concurrency": 40,
+  "first_throttled_concurrency": 50,
+  "retry_after_available": false,
+  "old_s1_claim": "并发上限≈30（旧账号实测）",
+  "new_conclusion": "并发上限约 40~50；Retry-After 仍为 None"
+}

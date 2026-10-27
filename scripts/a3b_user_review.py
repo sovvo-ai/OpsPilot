@@ -164,7 +164,13 @@ def main() -> int:
             body = body.strip()
             if len(body) > 700:
                 body = body[:700] + " …（截断）"
-            lines.append(f"*引用 {j} · 来源 `{title}` · chunk `{cid[:8]}…`*")
+            # ⚠️ **必须用 citations[].index，不能用 enumerate 的位置**（q029 瑕疵修复）。
+            # 契约：正文角标 `[n]` 里的 n === citations[].index。
+            # 早期这里写 `引用 {j}`（数组位置），于是正文写 `[3]` 的条目在清单里显示"引用 1"
+            # —— 复核者按清单标号回查正文会对不上（`a3b_user_review_v3.md` q029 已记录）。
+            idx = cit.get("index")
+            label = f"引用 {idx}" if idx else f"引用 {j}（无 index 字段，按位置）"
+            lines.append(f"*{label} · 来源 `{title}` · chunk `{cid[:8]}…`*")
             lines.append("")
             lines.append(f"> {body.replace(chr(10), chr(10) + '> ')}")
             lines.append("")

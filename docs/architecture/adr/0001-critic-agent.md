@@ -1,12 +1,21 @@
 # ADR-0001：引用越界的治理方案（critic 审查者 vs 检索主题过滤）
 
+> ⚠️ **状态：Superseded（部分）** —— 本迭代主药已由 [`ADR-0002`](0002-topic-filter-over-critic.md) 裁定为
+> **检索主题一致性过滤器**，critic 推迟 V1.2。
+> **本文的 §3–§7（输入契约 / 三态 schema / 处置策略 / 与 checker 边界 / 负面表 / 未决事项）仍然有效**，
+> 是 V1.2 立项的基础；**§1 的"本迭代主药"结论已被取代**。
+> 本文不改写正文 —— 历史只追加。
+
 | 项 | 值 |
 |---|---|
-| 状态 | **待外部审查**（实现方不得自行置为 Accepted —— 计划书附录维护规则 4） |
+| 状态 | **Superseded（部分）** —— 2026-10-27 外部审查裁决：**本迭代范围部分**由 [`ADR-0002`](0002-topic-filter-over-critic.md) 取代；决策存留部分（§3–§7）仍然有效，供 V1.2 立项复用 |
 | 日期 | 2026-10-27（v1：critic 方案；**v2：SPIKE 后追加 filter 方案与主药建议**） |
 | 决策者 | 实现方提案，外部审查裁定 |
 | 上游 | `docs/prd/PRD-delta-v1.1.md`、`docs/testing/spike-report-v11-critic-phase2.md` |
 | 影响面 | `ai-service/app/`（检索层 + 图结构）、`backend/migrations/`（若做 critic）、前端轨迹 |
+
+> **本文只追加、不改写**（与 git tag 同理）。替代关系与 V1.2 立项证据见
+> [`ADR-0002`](0002-topic-filter-over-critic.md) §2 / §4。
 
 ---
 

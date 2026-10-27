@@ -296,41 +296,99 @@ class TestStateSchemaCompleteness:
     `RetrievedChunk`，**没写进 `State`** —— TypedDict 按 schema 过滤节点返回值，
     于是 refuse 永远拿到 `None`，PRD §7.4 的"列出最高分片段"退化成"未找到"。
 
-    这是"字段在写路径存在、传输路径丢失"的**第三次**（前两次：`retrieval_top_score`
-    未落库、`Citation.Index` 未声明）。所以立一条**机制级**回归。
+    这是"字段在写路径存在、传输路径丢失"的**第 3 次**（前两次：`retrieval_top_score`
+    未落库、`Citation.Index` 未声明）。**第 4 次**出现在 V1.1 SPIKE 脚本（`seed` 未声明），
+    **第 5 次**是 ADR-0002 的 `topic_filter` 字段。所以立一条**机制级**回归，
+    并升级为**按 agent 分组的白名单**（ADR-0002 §7 要求）。
     """
 
-    def test_every_returned_key_is_declared_in_state(self):
-        import inspect
+    # **每 agent 的返回键白名单**（ADR-0002 §7：越权写入即测试红）。
+    # 新增节点或给节点加返回键时，必须同时更新这里与 State 声明 —— 两处都改才算完。
+    AGENT_RETURN_KEYS: dict[str, set[str]] = {
+        "router": {"route", "route_conf"},
+        "retrieval": {
+            "rewritten_query", "chunks", "probe_chunk",
+            "topic_filter",          # V1.1 主题过滤审计
+            "degraded", "degrade_reasons",
+        },
+        "troubleshoot": {"tool_calls", "draft_answer", "degraded", "degrade_reasons",
+                         "_force_answer_type"},
+        "evidence": {"citations", "check_result", "degraded", "degrade_reasons"},
+        "final": {"final_text", "citations", "answer_type", "degraded",
+                  "degrade_reasons", "citation_overreach"},
+        "refuse": {"final_text", "answer_type", "citations"},
+        "smalltalk": {"final_text", "answer_type", "citations"},
+    }
 
+    def test_every_whitelisted_key_is_declared_in_state(self):
+        """白名单里的每个键都必须在 State 声明（否则写进去也会被丢弃）。"""
         from app.graph import state as st
 
         declared = set(st.State.__annotations__)
-        # 节点允许返回的"内部键"白名单（以 _ 开头的是内部标记，已在 State 声明）
-        required = {
-            "rewritten_query", "chunks", "probe_chunk",      # retrieval
-            "tool_calls", "draft_answer",                    # troubleshoot
-            "citations", "final_text", "answer_type",        # final / refuse
-            "route", "route_conf",                           # router
-            "degraded", "degrade_reasons",                   # 通用
-        }
-        missing = required - declared
-        assert not missing, f"这些键节点会 return 但 State 未声明（会被静默丢弃）: {sorted(missing)}"
+        missing: dict[str, list[str]] = {}
+        for agent, keys in self.AGENT_RETURN_KEYS.items():
+            bad = keys - declared
+            if bad:
+                missing[agent] = sorted(bad)
+        assert not missing, (
+            f"这些键在白名单里但 State 未声明（会被静默丢弃）: {missing}"
+        )
 
-    def test_retrieval_node_return_keys_are_declared(self):
-        """直接检查 retrieval 节点的返回键集合 ⊆ State。"""
-        from app.graph import state as st
-        from app.graph.retrieval import retrieval_node
+    def test_retrieval_agent_may_not_write_outside_whitelist(self):
+        """**越权写入即红**：retrieval 节点不得返回白名单以外的业务键。"""
         from app.graph.budget import Budget
+        from app.graph.retrieval import retrieval_node
 
         out = retrieval_node(
             {"question": "q", "owner_id": "u", "route": "kb_qa", "turn_index": 0},
-            cfg={"retrieval_top_k": 5, "retrieval_min_score": 0.35, "hnsw_ef_search": 100},
+            cfg=_test_cfg(topic_filter=True),
             budget=Budget(),
-            retrieve_fn=lambda o, q, c: [],
+            retrieve_fn=lambda o, q, c, **kw: (
+                ([{"chunk_id": "c1", "doc_id": "d", "doc_title": "k8s-pod-troubleshooting",
+                   "score": 0.9, "content": "探针配置说明 livenessProbe",
+                   "heading_path": "探针"}], None)
+                if kw.get("probe") else
+                [{"chunk_id": "c1", "doc_id": "d", "doc_title": "k8s-pod-troubleshooting",
+                  "score": 0.9, "content": "探针配置说明 livenessProbe",
+                  "heading_path": "探针"}]
+            ),
         )
-        undeclared = set(out) - set(st.State.__annotations__)
-        assert not undeclared, f"retrieval_node 返回了未声明键: {sorted(undeclared)}"
+        allowed = self.AGENT_RETURN_KEYS["retrieval"]
+        illegal = set(out) - allowed
+        assert not illegal, (
+            f"retrieval 节点返回了白名单外的键（越权写入）: {sorted(illegal)}；"
+            f"白名单={sorted(allowed)}"
+        )
+
+    def test_retrieval_node_return_keys_are_declared(self):
+        """直接检查 retrieval 节点的返回键集合 ⊆ State（含开/关过滤器两种情况）。"""
+        from app.graph import state as st
+        from app.graph.budget import Budget
+        from app.graph.retrieval import retrieval_node
+
+        for enabled in (False, True):
+            out = retrieval_node(
+                {"question": "q", "owner_id": "u", "route": "kb_qa", "turn_index": 0},
+                cfg=_test_cfg(topic_filter=enabled),
+                budget=Budget(),
+                retrieve_fn=lambda o, q, c, **kw: (([], None) if kw.get("probe") else []),
+            )
+            undeclared = set(out) - set(st.State.__annotations__)
+            assert not undeclared, (
+                f"[filter={'on' if enabled else 'off'}] retrieval_node 返回了未声明键: "
+                f"{sorted(undeclared)}"
+            )
+
+
+def _test_cfg(*, topic_filter: bool = False) -> dict:
+    """测试用最小 cfg（含 V1.1 主题过滤开关）。"""
+    return {
+        "retrieval_top_k": 5,
+        "retrieval_min_score": 0.35,
+        "hnsw_ef_search": 100,
+        "topic_filter_enabled": topic_filter,
+        "topic_filter_min_consistency": 1.0,
+    }
 
 
 class TestRefuseListsProbeChunk:

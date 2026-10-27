@@ -187,3 +187,5 @@ class TestInvariants:
         kept, _ = filter_by_topic(chunks, "探针")
         assert kept[0]["score"] == 0.777
         assert "_topic_score" in kept[0]
+
+

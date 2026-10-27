@@ -19,6 +19,7 @@ from typing import Any
 
 from app.graph.budget import PRIORITY_REWRITE, Budget
 from app.retrieval import RetrievalError, retrieve, top_score
+from app.topic_filter import filter_by_topic
 
 logger = logging.getLogger("app.graph.retrieval")
 
@@ -127,12 +128,47 @@ def retrieval_node(
         chunks = []
 
     best = top_score(chunks)
+
+    # --- 检索主题一致性过滤（V1.1 主药，ADR-0002）---
+    #
+    # 为什么放在这里而不是 retrieval 内部：过滤是**检索后的独立后处理**，
+    # 与"检索怎么取"无关。放节点层可保证：
+    #   ① 开关只影响编排，不动检索实现（回滚成本最低）
+    #   ② 剔除明细能进 step（trace），审计误杀不靠人肉
+    #
+    # 默认 off —— 阈值过拟合本语料（ADR-0002 §6.2），换语料须重扫后启用。
+    topic_diag: dict[str, Any] | None = None
+    if cfg.get("topic_filter_enabled") and chunks:
+        chunks, topic_diag = filter_by_topic(
+            chunks,
+            query,
+            min_consistency=float(cfg.get("topic_filter_min_consistency", 1.0)),
+        )
+        if topic_diag.get("removed"):
+            logger.info(
+                "主题过滤剔除 %d/%d chunk：%s",
+                len(topic_diag["removed"]),
+                len(topic_diag["removed"]) + len(chunks),
+                [(r["doc_title"], r["topic_score"]) for r in topic_diag["removed"]],
+            )
+        if topic_diag.get("reason") == "fallback_kept_top":
+            # 全被剔除 → 兜底保留最高分。不标 degraded（这是设计行为），
+            # 但必须留痕：出现频繁说明锚点提取或阈值与该语料不匹配。
+            logger.warning("主题过滤把检索集清空，已兜底保留最高分 chunk")
+
     step = {
         "node": "retrieval",
         "duration_ms": int((time.monotonic() - t0) * 1000),
         "input_digest": _digest(query),
         "output_summary": (
-            f"chunks={len(chunks)}, top_score={best:.4f}, rewritten={rewritten is not None}"
+            f"chunks={len(chunks)}, top_score={best:.4f}, "
+            f"rewritten={rewritten is not None}"
+            + (
+                f", filtered_out={len(topic_diag['removed'])}"
+                f", anchors={len(topic_diag['anchors'])}"
+                if topic_diag
+                else ""
+            )
         ),
         "degraded": degraded,
     }
@@ -144,6 +180,9 @@ def retrieval_node(
         "chunks": chunks,
         # 阈值下的最高分（无则 None）—— 只在拒答时展示，不参与作答/引用
         "probe_chunk": probe_chunk,
+        # 主题过滤审计（哪个 chunk 被哪个锚点拒了）—— 供 trace 落库与误杀复查。
+        # ⚠️ 必须在 State 声明，否则被 LangGraph 静默丢弃（该坑已复发 4 次）。
+        "topic_filter": topic_diag,
         "degraded": degraded,
         "degrade_reasons": reasons,
     }
