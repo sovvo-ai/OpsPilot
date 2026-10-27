@@ -211,7 +211,11 @@ cd ai-service
 | [`docs/architecture/agent-workflow.md`](docs/architecture/agent-workflow.md) | LangGraph 图、预算、降级 |
 | [`docs/architecture/tool-policy.md`](docs/architecture/tool-policy.md) | 工具白名单、注入防护 |
 | [`docs/testing/rag-eval-spec.md`](docs/testing/rag-eval-spec.md) | 评测口径与报告 schema |
-| [`docs/testing/test-plan.md`](docs/testing/test-plan.md) | 分层测试与全局约定（G1~G7） |
+| [`docs/testing/test-plan.md`](docs/testing/test-plan.md) | 分层测试与全局约定（G1~G8） |
+| [`docs/testing/v1.1-eval-report.md`](docs/testing/v1.1-eval-report.md) | **v1.1 评测**（FB1–FB4 逐项判定 + 配对延迟 + 调参过程） |
+| [`docs/architecture/adr/0002-topic-filter-over-critic.md`](docs/architecture/adr/0002-topic-filter-over-critic.md) | **ADR-0002**：主药选择（主题过滤优于生成后审查）+ V1.2 立项证据 |
+| [`docs/architecture/adr/0001-critic-agent.md`](docs/architecture/adr/0001-critic-agent.md) | ADR-0001：critic 方案（Superseded 部分，供 V1.2 复用） |
+| [`CHANGELOG.md`](CHANGELOG.md) | 版本变更（含被证伪方案的留档） |
 | `docs/testing/s{4,5,6,7,8}-acceptance-report.md` | 各阶段验收报告（含实测输出） |
 | [`docs/testing/s9-ui-smoke.md`](docs/testing/s9-ui-smoke.md) | S9 前端冒烟（U1–U10 + UI-10 + auth 豁免反向用例，38/38） |
 | [`docs/testing/s8v3-eval-report.md`](docs/testing/s8v3-eval-report.md) | v3 评测报告（含未达标项与残留分析） |
@@ -261,6 +265,7 @@ cd backend && go vet ./... && go test ./...
 - **过滤参数的已知限制**：`min_consistency=1.0` 是在 **5 篇语料 / 35 题**上标定的，
   **新语料泛化未验证，上线新文档集前须重扫阈值**
   （重扫脚本 `scripts/spike_v11/s5b_threshold_scan.py`）。
-  该参数**默认关闭**（`TOPIC_FILTER_ENABLED=false`），评测与演示显式开启。
+  该参数**默认开启**（`TOPIC_FILTER_ENABLED=true`，保证 clone 后行为与评测一致），
+  设 `false` 可整层关闭退回 V1.0 行为。
 - 工具层的端口提取是**启发式**（从问句/附件抽端口），非结构化输入；V1 定位是分析用户提供的文本，不做主机探测。
 - `search_knowledge_base` 注册在工具表内，但**按设计不接入 troubleshoot 节点**（计划书 §6.2 声明的可调工具只有 `analyze_error_log` / `check_port_conflict`；主链路 retrieval 已在前，工具内再查 KB 属冗余）。

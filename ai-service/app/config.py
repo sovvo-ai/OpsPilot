@@ -30,11 +30,16 @@ def get_config() -> dict:
         "hnsw_ef_search": int(os.getenv("HNSW_EF_SEARCH", "100")),
         # 检索主题一致性过滤（V1.1 主药，ADR-0002）
         #
-        # 默认 **off** —— 理由：阈值 min_consistency=1.0 是在 5 篇语料/35 题上扫出来的，
-        # 参数过拟合于本语料（ADR-0002 §6.2）。换新文档集必须先重扫阈值
-        # （`scripts/spike_v11/s5b_threshold_scan.py`）再启用。
-        # 评测与演示显式置 1。
-        "topic_filter_enabled": os.getenv("TOPIC_FILTER_ENABLED", "false").lower()
+        # 默认 **true**（2026-10-27 验收裁定）—— 理由比"安全"更实际：
+        #   ① **部署一致性**：不开的话，陌生人 clone 下来跑到的行为与评测报告不符
+        #      （报告说越界 −91.6%，他跑出来是未过滤的旧行为），等于"报告与代码不一致"；
+        #   ② 本项目的**种子语料（5 篇）就是标定语料**，demo 场景下 on 才是正确基线。
+        #
+        # ⚠️ **风险已知且已记录**：`min_consistency=1.0` 过拟合本语料（ADR-0002 §6.2）。
+        #    上传**新的文档集**前必须重扫阈值（`scripts/spike_v11/s5b_threshold_scan.py`），
+        #    否则可能过严（误杀正确 chunk）或过松（放行污染）。
+        #    置 `TOPIC_FILTER_ENABLED=false` 可整层关闭。
+        "topic_filter_enabled": os.getenv("TOPIC_FILTER_ENABLED", "true").lower()
         in ("1", "true", "yes"),
         "topic_filter_min_consistency": float(
             os.getenv("TOPIC_FILTER_MIN_CONSISTENCY", "1.0")

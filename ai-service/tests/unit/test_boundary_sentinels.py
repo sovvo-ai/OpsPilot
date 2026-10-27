@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -186,11 +187,37 @@ class TestOverfitGuard:
         )
 
     def test_filter_off_by_default(self):
+        """默认值锁定为 **on**（2026-10-27 验收裁定改变，原为 off）。
+
+        **为什么改成 on**：不开的话，陌生人 clone 下来跑到的行为与评测报告不符
+        （报告说越界 −91.6%，他跑出来是未过滤的旧行为）——
+        等于"报告与代码不一致"，比"参数可能过拟合"更不能接受。
+
+        **本条测试仍必须存在**：它锁的是"默认值不被人偷偷改回去"，
+        以及提醒改默认值时必须同步 ADR-0002 §6.2 的过拟合声明的适用范围。
+        """
         from app.config import get_config
 
-        assert get_config()["topic_filter_enabled"] is False, (
-            "默认必须 off —— 阈值过拟合本语料，换语料须重扫后才启用（ADR-0002 §6.2）"
+        assert get_config()["topic_filter_enabled"] is True, (
+            "默认值变了！若改回 off，会让部署行为与 v1.1 评测报告不一致"
+            "（报告声称过滤生效）。改前须同步 ADR-0002 §6.2 与 README 已知限制。"
         )
+
+    def test_can_be_disabled_by_env(self):
+        """必须保留整层关闭能力 —— 换新语料时用户要能立刻关掉。"""
+        import app.config as cfg_mod
+
+        old = os.environ.get("TOPIC_FILTER_ENABLED")
+        try:
+            os.environ["TOPIC_FILTER_ENABLED"] = "false"
+            cfg_mod.get_config.cache_clear()
+            assert cfg_mod.get_config()["topic_filter_enabled"] is False
+        finally:
+            if old is None:
+                os.environ.pop("TOPIC_FILTER_ENABLED", None)
+            else:
+                os.environ["TOPIC_FILTER_ENABLED"] = old
+            cfg_mod.get_config.cache_clear()
 
     def test_known_limitation_documented(self):
         """已知限制必须写进 ADR-0002（过拟合声明不能只存在于对话里）。"""
