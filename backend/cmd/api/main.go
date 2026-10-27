@@ -58,7 +58,7 @@ func main() {
 	if database != nil {
 		r.Use(middleware.WithDB(database.DB))
 	}
-	// S5：编排客户端（Jan 侧调 ai-service /internal/v1/chat）
+	// S5：编排客户端（Go 侧调 ai-service /internal/v1/chat）
 	orch := chat.NewOrchestrator(cfg.AIServiceURL, cfg.AIServiceToken)
 	r.Use(middleware.WithOrchestrator(orch))
 	r.Use(middleware.JWTAuth(cfg.JWTSecret))
@@ -76,7 +76,9 @@ func main() {
 	handlers.RegisterAPIRoutes(r, health, auth)
 
 	// S9：前端单页（Go embed 托管，无额外组件）。
-	// 必须在业务路由之后注册 —— 它的 NoRoute 兜底会接管未匹配路径。
+	// 必须在业务路由之后注册 —— 全引擎唯一的 NoRoute（统一 404/405 + SPA 回落）
+	// 归口在 web.Register 内，main 不再注册第二个 NoRoute
+	//（gin 的 NoRoute 后注册覆盖先注册，S9 终检修掉的真实缺陷）。
 	if err := web.Register(r); err != nil {
 		log.Fatalf("前端静态资源挂载失败: %v", err)
 	}
@@ -86,11 +88,6 @@ func main() {
 		dispatcher = ingest.NewDispatcher(database.DB, cfg.AIServiceURL, cfg.AIServiceToken)
 		dispatcher.Start()
 	}
-
-	// 404 也走统一结构
-	r.NoRoute(func(c *gin.Context) {
-		middleware.AbortWithError(c, http.StatusNotFound, "NOT_FOUND", "路径不存在")
-	})
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.AppPort,
@@ -121,9 +118,4 @@ func main() {
 	if database != nil {
 		_ = database.Close()
 	}
-}
-
-// AbortWithError 暴露给 main 的 no-route 处理。
-func AbortWithError(c *gin.Context, status int, code, message string) {
-	middleware.AbortWithError(c, status, code, message)
 }

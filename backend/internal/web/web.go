@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"opspilot/backend/internal/middleware"
 )
 
 //go:embed static
@@ -64,20 +65,19 @@ func Register(r *gin.Engine) error {
 	r.GET("/style.css", func(c *gin.Context) { serve(c, "style.css") })
 	r.GET("/app.js", func(c *gin.Context) { serve(c, "app.js") })
 
-	// 兜底：非 API/健康路径回落首页（方便将来加图标等资源）
+	// 兜底：非 API/健康路径回落首页（方便将来加图标等资源）。
+	// 全引擎唯一的 NoRoute 归口在这里（gin 的 NoRoute 后注册会覆盖先注册，
+	// main 不得再注册第二个，否则本兜底静默失效——S9 终检发现的真实缺陷）。
+	// 404/405 走 middleware.AbortWithError，保证带 request_id 的统一错误结构。
 	r.NoRoute(func(c *gin.Context) {
 		p := c.Request.URL.Path
 		if strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/health") ||
 			strings.HasPrefix(p, "/internal/") {
-			c.JSON(http.StatusNotFound, gin.H{
-				"error": gin.H{"code": "NOT_FOUND", "message": "接口不存在"},
-			})
+			middleware.AbortWithError(c, http.StatusNotFound, "NOT_FOUND", "接口不存在")
 			return
 		}
 		if c.Request.Method != http.MethodGet {
-			c.JSON(http.StatusMethodNotAllowed, gin.H{
-				"error": gin.H{"code": "METHOD_NOT_ALLOWED", "message": "方法不支持"},
-			})
+			middleware.AbortWithError(c, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "方法不支持")
 			return
 		}
 		serve(c, strings.TrimPrefix(p, "/"))
