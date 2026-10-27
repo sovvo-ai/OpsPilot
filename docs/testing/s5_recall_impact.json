@@ -1,0 +1,245 @@
+[
+  {
+    "id": "q001",
+    "n_base": 5,
+    "n_flt": 2,
+    "hit_base": true,
+    "hit_flt": true,
+    "mrr_base": 1.0,
+    "mrr_flt": 1.0
+  },
+  {
+    "id": "q002",
+    "n_base": 5,
+    "n_flt": 2,
+    "hit_base": true,
+    "hit_flt": true,
+    "mrr_base": 0.2,
+    "mrr_flt": 0.5
+  },
+  {
+    "id": "q003",
+    "n_base": 5,
+    "n_flt": 1,
+    "hit_base": true,
+    "hit_flt": true,
+    "mrr_base": 1.0,
+    "mrr_flt": 1.0
+  },
+  {
+    "id": "q004",
+    "n_base": 5,
+    "n_flt": 1,
+    "hit_base": true,
+    "hit_flt": true,
+    "mrr_base": 0.5,
+    "mrr_flt": 1.0
+  },
+  {
+    "id": "q005",
+    "n_base": 4,
+    "n_flt": 1,
+    "hit_base": true,
+    "hit_flt": true,
+    "mrr_base": 1.0,
+    "mrr_flt": 1.0
+  },
+  {
+    "id": "q006",
+    "n_base": 2,
+    "n_flt": 2,
+    "hit_base": true,
+    "hit_flt": true,
+    "mrr_base": 1.0,
+    "mrr_flt": 1.0
+  },
+  {
+    "id": "q007",
+    "n_base": 5,
+    "n_flt": 1,
+    "hit_base": true,
+    "hit_flt": true,
+    "mrr_base": 0.3333333333333333,
+    "mrr_flt": 1.0
+  },
+  {
+    "id": "q008",
+    "n_base": 5,
+    "n_flt": 2,
+    "hit_base": true,
+    "hit_flt": true,
+    "mrr_base": 1.0,
+    "mrr_flt": 1.0
+  },
+  {
+    "id": "q009",
+    "n_base": 5,
+    "n_flt": 2,
+    "hit_base": true,
+    "hit_flt": true,
+    "mrr_base": 1.0,
+    "mrr_flt": 1.0
+  },
+  {
+    "id": "q010",
+    "n_base": 5,
+    "n_flt": 1,
+    "hit_base": true,
+    "hit_flt": true,
+    "mrr_base": 1.0,
+    "mrr_flt": 1.0
+  },
+  {
+    "id": "q011",
+    "n_base": 5,
+    "n_flt": 2,
+    "hit_base": true,
+    "hit_flt": true,
+    "mrr_base": 0.5,
+    "mrr_flt": 1.0
+  },
+  {
+    "id": "q012",
+    "n_base": 5,
+    "n_flt": 3,
+    "hit_base": true,
+    "hit_flt": true,
+    "mrr_base": 1.0,
+    "mrr_flt": 1.0
+  },
+  {
+    "id": "q013",
+    "n_base": 5,
+    "n_flt": 2,
+    "hit_base": true,
+    "hit_flt": true,
+    "mrr_base": 1.0,
+    "mrr_flt": 1.0
+  },
+  {
+    "id": "q014",
+    "n_base": 5,
+    "n_flt": 3,
+    "hit_base": true,
+    "hit_flt": true,
+    "mrr_base": 1.0,
+    "mrr_flt": 1.0
+  },
+  {
+    "id": "q015",
+    "n_base": 5,
+    "n_flt": 2,
+    "hit_base": true,
+    "hit_flt": true,
+    "mrr_base": 1.0,
+    "mrr_flt": 1.0
+  },
+  {
+    "id": "q016",
+    "n_base": 5,
+    "n_flt": 2,
+    "hit_base": true,
+    "hit_flt": true,
+    "mrr_base": 1.0,
+    "mrr_flt": 1.0
+  },
+  {
+    "id": "q017",
+    "n_base": 5,
+    "n_flt": 4,
+    "hit_base": true,
+    "hit_flt": true,
+    "mrr_base": 0.5,
+    "mrr_flt": 0.5
+  },
+  {
+    "id": "q018",
+    "n_base": 5,
+    "n_flt": 1,
+    "hit_base": true,
+    "hit_flt": true,
+    "mrr_base": 1.0,
+    "mrr_flt": 1.0
+  },
+  {
+    "id": "q027",
+    "n_base": 4,
+    "n_flt": 1,
+    "hit_base": true,
+    "hit_flt": true,
+    "mrr_base": 1.0,
+    "mrr_flt": 1.0
+  },
+  {
+    "id": "q028",
+    "n_base": 5,
+    "n_flt": 2,
+    "hit_base": true,
+    "hit_flt": true,
+    "mrr_base": 1.0,
+    "mrr_flt": 1.0
+  },
+  {
+    "id": "q029",
+    "n_base": 5,
+    "n_flt": 1,
+    "hit_base": true,
+    "hit_flt": true,
+    "mrr_base": 0.3333333333333333,
+    "mrr_flt": 1.0
+  },
+  {
+    "id": "q030",
+    "n_base": 5,
+    "n_flt": 2,
+    "hit_base": true,
+    "hit_flt": true,
+    "mrr_base": 0.5,
+    "mrr_flt": 0.5
+  },
+  {
+    "id": "m001",
+    "n_base": 0,
+    "n_flt": 0,
+    "hit_base": false,
+    "hit_flt": false,
+    "mrr_base": 0,
+    "mrr_flt": 0
+  },
+  {
+    "id": "m002",
+    "n_base": 2,
+    "n_flt": 1,
+    "hit_base": true,
+    "hit_flt": true,
+    "mrr_base": 1.0,
+    "mrr_flt": 1.0
+  },
+  {
+    "id": "m003",
+    "n_base": 5,
+    "n_flt": 2,
+    "hit_base": true,
+    "hit_flt": true,
+    "mrr_base": 1.0,
+    "mrr_flt": 1.0
+  },
+  {
+    "id": "m004",
+    "n_base": 5,
+    "n_flt": 3,
+    "hit_base": false,
+    "hit_flt": false,
+    "mrr_base": 0,
+    "mrr_flt": 0
+  },
+  {
+    "id": "m005",
+    "n_base": 3,
+    "n_flt": 1,
+    "hit_base": true,
+    "hit_flt": true,
+    "mrr_base": 1.0,
+    "mrr_flt": 1.0
+  }
+]
